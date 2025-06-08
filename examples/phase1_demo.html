@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hatch Engine - Phase 1 Demo</title>
+    <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Engine Core Stubs -->
+    <script src="../src/core/ErrorHandler.js"></script>
+    <script src="../src/core/EventSystem.js"></script>
+    <script src="../src/core/HatchEngine.js"></script>
+
+    <!-- Engine Manager Stubs -->
+    <script src="../src/managers/InputManager.js"></script>
+    <script src="../src/managers/AssetManager.js"></script>
+    <script src="../src/managers/GridManager.js"></script>
+    <script src="../src/managers/TileManager.js"></script>
+
+    <!-- Engine System Stubs -->
+    <script src="../src/systems/RenderingEngine.js"></script>
+
+    <!-- Demo Script -->
+    <script src="js/phase1_demo.js"></script>
+</body>
+</html>
