@@ -1,0 +1,68 @@
+# hatch.config.yaml
+# Configuration file for HatchEngine projects
+
+project:
+  name: "My First Puzzle"
+  version: "0.1.0"
+  # description: "A simple puzzle game built with HatchEngine."
+  # authors: ["Your Name"]
+
+engine:
+  canvasId: "gameCanvas" # The ID of the HTML canvas element to use
+  width: 800             # Default width of the game canvas
+  height: 600            # Default height of the game canvas
+  initialScene: testScene # Specify the initial scene to load
+  showDebugInfo: true    # Explicitly enable debug info via config
+  # targetFps: 60        # Target frames per second (not directly used by core loop, but can be for game logic)
+  # rendering:
+    # backend: "canvas2d" # e.g., "webgl", "canvas2d"
+    # antiAlias: true
+  # audio:
+    # enable: true
+    # defaultVolume: 0.8
+
+# Asset manager configuration (Example)
+# assets:
+  # basePath: "assets/"
+  # manifest: "asset-manifest.json" # A file listing all assets to preload
+  # preload:
+    # - "images/spritesheet.png"
+    # - "audio/background_music.mp3"
+
+# Scene manager configuration (Example)
+# scenes:
+  # initialScene: "mainMenu"
+  # sceneList:
+    # - id: "mainMenu"
+      # path: "scenes/MainMenuScene.js" # Path to the scene file
+    # - id: "level1"
+      # path: "scenes/Level1Scene.js"
+
+# Game-specific configurations can be nested under a 'game' key or other custom keys
+# game:
+  # difficulty: "normal"
+  # player:
+    # initialHealth: 100
+    # speed: 5
+  # levels:
+    # total: 3
+    # unlockType: "sequential" # "sequential" or "scoreBased"
+
+# Input configuration (Example)
+# input:
+  # keybindings:
+    # moveUp: "KeyW"
+    # moveDown: "KeyS"
+    # action: "Space"
+  # mouseSensitivity: 1.0
+
+# Development server settings (if applicable, for a custom dev server)
+# devServer:
+  # port: 3000
+  # openBrowser: true
+
+# Build settings (if applicable, for a custom build process)
+# build:
+  # outputDir: "dist/"
+  # minify: true
+  # sourceMaps: false

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My First Puzzle</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars if canvas is flush with body */
+            background-color: #f0f0f0; /* Light grey background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensure body takes full viewport height */
+        }
+        canvas#gameCanvas {
+            border: 1px solid #000; /* Simple border for the canvas */
+            background-color: #fff; /* White background for the game area */
+            /* Centering the canvas is handled by flexbox on body */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <!--
+        The 'type="module"' attribute is important for using ES6 modules (import/export).
+        Ensure your development server is configured to serve .js files with the correct
+        MIME type (application/javascript) for modules.
+    -->
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
