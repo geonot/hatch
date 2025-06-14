@@ -56,10 +56,6 @@ class AssetManager {
         });
     }
 
-    // Example for other asset types (not fully implemented yet)
-    // _loadAudio(path, name) { /* ... */ }
-    // _loadJSON(path, name) { /* ... fetch(path).then(res => res.json()) ... */ }
-
     /**
      * Loads an audio asset from the given path.
      * @param {string} path - The URL or path to the audio file.
@@ -71,12 +67,25 @@ class AssetManager {
     _loadAudio(path, name) {
         return new Promise((resolve, reject) => {
             const audio = new Audio();
-            audio.addEventListener('canplaythrough', () => {
+
+            const onCanPlayThrough = () => {
+                cleanup();
                 resolve(audio);
-            });
-            audio.addEventListener('error', () => {
-                reject(new Error(`AssetManager: Failed to load audio '${name}' at path '${path}'.`));
-            });
+            };
+
+            const onError = () => {
+                cleanup();
+                reject(new Error(`AssetManager: Failed to load audio '${name}' at path '${path}'. Check network or console for details.`));
+            };
+
+            const cleanup = () => {
+                audio.removeEventListener('canplaythrough', onCanPlayThrough);
+                audio.removeEventListener('error', onError);
+            };
+
+            audio.addEventListener('canplaythrough', onCanPlayThrough);
+            audio.addEventListener('error', onError);
+
             audio.src = path;
             audio.preload = 'auto';
             audio.load();
@@ -207,7 +216,6 @@ class AssetManager {
      * @returns {Promise<void>} A promise that resolves when all assets in the manifest
      *                          have been attempted to load. It uses `Promise.allSettled`
      *                          so one failed asset doesn't prevent others from loading.
-     * @todo Implement loading manifest from a JSON file path.
      */
     async loadManifest(manifest) {
         if (typeof manifest === 'string') {
@@ -257,6 +265,42 @@ class AssetManager {
             const errorMsg = "AssetManager.loadManifest: Manifest object is invalid or missing the 'assets' array.";
             this.engine.errorHandler.warn(errorMsg, { context: 'ManifestLoading.invalidManifest', manifestObject: manifest });
         }
+    }
+
+    /**
+     * Loads an image asset by name, assuming a convention-based path.
+     * The path is constructed as 'assets/images/[name]'.
+     * @param {string} name - The filename of the image (e.g., 'player.png').
+     *                        This name is also used as the cache key.
+     * @returns {Promise<HTMLImageElement>} A promise that resolves with the loaded HTMLImageElement.
+     */
+    getImage(name) {
+        const path = `assets/images/${name}`;
+        return this.loadAsset({ name, path, type: 'image' });
+    }
+
+    /**
+     * Loads an audio asset by name, assuming a convention-based path.
+     * The path is constructed as 'assets/audio/[name]'.
+     * @param {string} name - The filename of the audio asset (e.g., 'shoot.wav').
+     *                        This name is also used as the cache key.
+     * @returns {Promise<HTMLAudioElement>} A promise that resolves with the loaded HTMLAudioElement.
+     */
+    getAudio(name) {
+        const path = `assets/audio/${name}`;
+        return this.loadAsset({ name, path, type: 'audio' });
+    }
+
+    /**
+     * Loads a JSON data file by name, assuming a convention-based path.
+     * The path is constructed as 'assets/data/[name]'.
+     * @param {string} name - The filename of the JSON file (e.g., 'level1.json').
+     *                        This name is also used as the cache key.
+     * @returns {Promise<Object>} A promise that resolves with the parsed JSON object.
+     */
+    getJSON(name) {
+        const path = `assets/data/${name}`;
+        return this.loadAsset({ name, path, type: 'json' });
     }
 
     /**

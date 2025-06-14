@@ -1,55 +1,18 @@
 import { HatchEngine } from '../../engine/core/HatchEngine.js'; // Adjusted path
-import { AssetManager } from '../../engine/assets/AssetManager.js'; // Adjusted path
-import { InputManager } from '../../engine/input/InputManager.js'; // Adjusted path
-import { RenderingEngine } from '../../engine/rendering/RenderingEngine.js'; // Adjusted path
-import { SceneManager } from '../../engine/scenes/SceneManager.js'; // Adjusted path
+// AssetManager, InputManager, RenderingEngine, SceneManager are now auto-instantiated by HatchEngine.init()
 import TestScene from './scenes/TestScene.js';
 
 console.log("Hatch game starting (my-first-puzzle using new main.js structure)...");
 
-// Function to load and parse hatch.config.yaml
-async function loadConfig() {
-    try {
-        const response = await fetch('/hatch.config.yaml'); // Fetches from the public root
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const yamlText = await response.text();
-        // Simple YAML parser (can be replaced with a library later if complex features are needed)
-        const config = {};
-        yamlText.split('\n').forEach(line => {
-            const parts = line.split(':');
-            if (parts.length === 2) {
-                config[parts[0].trim()] = parts[1].trim();
-            }
-        });
-        // Convert numeric values
-        if (config.gameWidth) config.gameWidth = parseInt(config.gameWidth, 10);
-        if (config.gameHeight) config.gameHeight = parseInt(config.gameHeight, 10);
-        if (isNaN(config.gameWidth)) config.gameWidth = 800; // Default if parsing failed
-        if (isNaN(config.gameHeight)) config.gameHeight = 600; // Default if parsing failed
-
-        // Ensure initialScene is correctly read or defaulted
-        if (!config.initialScene) config.initialScene = 'TestScene'; // Default if not in YAML
-        if (!config.assetManifest) config.assetManifest = 'assets/asset-manifest.json'; // Default
-
-        return config;
-    } catch (e) {
-        console.error("Failed to load or parse hatch.config.yaml", e);
-        // Fallback or default config
-        return {
-            projectName: 'MyFirstPuzzle (Fallback)',
-            canvasId: 'gameCanvas',
-            gameWidth: 800,
-            gameHeight: 600,
-            initialScene: 'TestScene',
-            assetManifest: 'assets/asset-manifest.json' // Ensure this is present for fallback
-        };
-    }
-}
+// Local loadConfig function is now removed.
+// HatchEngine.loadProjectConfig() will be used instead.
 
 async function gameMain() {
-    const hatchConfig = await loadConfig();
+    // Load project configuration using the static method from HatchEngine
+    // Assuming hatch.config.yaml is at the root of the served project.
+    const hatchConfig = await HatchEngine.loadProjectConfig('/hatch.config.yaml');
+    // Note: '/hatch.config.yaml' is the default, so could be HatchEngine.loadProjectConfig()
+
 
     const engineConfig = {
         canvasId: hatchConfig.canvasId || 'gameCanvas',
@@ -61,15 +24,13 @@ async function gameMain() {
     const engine = new HatchEngine(engineConfig);
 
     try {
-        engine.init(); // Sets up engine.canvas and engine.ctx
+        engine.init(); // Sets up engine.canvas, engine.ctx, and core managers
 
-        // Instantiate managers and attach to the engine instance
-        engine.assetManager = new AssetManager(engine);
-        engine.inputManager = new InputManager(engine, engine.canvas);
-        engine.renderingEngine = new RenderingEngine(engine.canvas, engine);
-        engine.sceneManager = new SceneManager(engine);
+        // Core managers (assetManager, inputManager, renderingEngine, sceneManager)
+        // are now automatically instantiated within engine.init().
 
         // Load asset manifest if specified in config
+        // Ensure engine.assetManager is available (it should be after init())
         if (hatchConfig.assetManifest && engine.assetManager) {
             try {
                 await engine.assetManager.loadManifest(hatchConfig.assetManifest);
@@ -81,8 +42,9 @@ async function gameMain() {
         }
 
         // Add and switch to the initial scene
+        // Register the TestScene class; SceneManager will instantiate it on first switch.
         if (engine.sceneManager && TestScene) {
-            engine.sceneManager.add(hatchConfig.initialScene, new TestScene(engine)); // Use initialScene from config
+            engine.sceneManager.add(hatchConfig.initialScene, TestScene); // Use initialScene from config
             await engine.sceneManager.switchTo(hatchConfig.initialScene);
             console.log(`Switched to initial scene: ${hatchConfig.initialScene}`);
         } else {
