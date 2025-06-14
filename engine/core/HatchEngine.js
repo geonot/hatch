@@ -1,7 +1,71 @@
 import { EventBus } from './EventBus.js';
 import { ErrorHandler } from './ErrorHandler.js';
+import AssetManager from '../assets/AssetManager.js';
+import InputManager from './InputManager.js';
+import RenderingEngine from './RenderingEngine.js';
+import SceneManager from './SceneManager.js';
+import Scene from './Scene.js';
 
 export class HatchEngine {
+    static async loadProjectConfig(configPath = '/hatch.config.yaml') {
+        try {
+            const response = await fetch(configPath);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status} for path: ${configPath}`);
+            }
+            const yamlText = await response.text();
+            const config = {};
+            yamlText.split('\n').forEach(line => {
+                // Basic YAML parsing: key: value
+                // Ignores comments, empty lines, and complex structures
+                const trimmedLine = line.trim();
+                if (trimmedLine && !trimmedLine.startsWith('#')) {
+                    const parts = trimmedLine.match(/^([^#:]+):\s*(.*)/);
+                    if (parts && parts.length === 3) {
+                        let key = parts[1].trim();
+                        let value = parts[2].trim();
+                        // Attempt to parse boolean and numbers, otherwise keep as string
+                        if (value === 'true') value = true;
+                        else if (value === 'false') value = false;
+                        // Check if value is a number string (handles integers and floats)
+                        // Ensure it's not an empty string or just a dot before parsing
+                        else if (value && !isNaN(Number(value))) value = Number(value);
+
+                        config[key] = value;
+                    }
+                }
+            });
+
+            // Apply defaults and ensure correct types for critical fields
+            config.projectName = config.projectName || 'MyHatchGame';
+            config.canvasId = config.canvasId || 'gameCanvas';
+
+            // Ensure gameWidth and gameHeight are numbers, default if not or NaN
+            config.gameWidth = typeof config.gameWidth === 'number' ? config.gameWidth : parseInt(config.gameWidth, 10);
+            if (isNaN(config.gameWidth)) config.gameWidth = 800;
+
+            config.gameHeight = typeof config.gameHeight === 'number' ? config.gameHeight : parseInt(config.gameHeight, 10);
+            if (isNaN(config.gameHeight)) config.gameHeight = 600;
+
+            config.initialScene = config.initialScene || 'TestScene';
+            // assetManifest can be undefined if not specified, AssetManager handles this.
+            // No explicit default for assetManifest is needed here, undefined is fine.
+
+            console.log('HatchEngine.loadProjectConfig: Loaded and parsed project config from', configPath, config);
+            return config;
+        } catch (e) {
+            console.error(`HatchEngine.loadProjectConfig: Failed to load or parse ${configPath}. Using fallback defaults. Error: ${e.message}`);
+            return {
+                projectName: 'MyHatchGame (Fallback)',
+                canvasId: 'gameCanvas',
+                gameWidth: 800,
+                gameHeight: 600,
+                initialScene: 'TestScene',
+                assetManifest: undefined // Explicitly undefined if load fails
+            };
+        }
+    }
+
     constructor(config) {
         this.canvasId = config.canvasId;
         this.width = config.width;
@@ -43,10 +107,30 @@ export class HatchEngine {
                 // This will throw and stop execution
                 return this.errorHandler.critical('Failed to get 2D rendering context for canvas.');
             }
+
+            // Instantiate core managers
+            this.assetManager = new AssetManager(this);
+            this.inputManager = new InputManager(this, this.canvas);
+            this.renderingEngine = new RenderingEngine(this.canvas, this);
+            this.sceneManager = new SceneManager(this);
+
+            // Make base Scene class available on the engine
+            this.Scene = Scene;
+
+            console.log('Core managers instantiated.');
+
         } catch (error) {
-            // Catch any other unexpected errors during init
-             // If critical already threw, this might not be reached, but good for safety.
-            return this.errorHandler.critical(`Error during engine initialization: ${error.message || error}`);
+            // Catch any other unexpected errors during init, including manager instantiation
+            // If critical already threw, this might not be reached, but good for safety.
+            // Ensure the error is properly handled by the errorHandler
+            const errorMessage = `Error during engine initialization or manager instantiation: ${error.message || error}`;
+            if (this.errorHandler) {
+                return this.errorHandler.critical(errorMessage, { originalError: error });
+            } else {
+                // Fallback if errorHandler itself is not available or failed
+                console.error(errorMessage, error);
+                throw error; // Re-throw if errorHandler is not available
+            }
         }
 
         this.eventBus.emit('engine:init', this);

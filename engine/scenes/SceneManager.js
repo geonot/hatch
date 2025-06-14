@@ -34,36 +34,56 @@ class SceneManager {
     }
 
     /**
-     * Adds a scene instance to the manager. The scene should be an instance of a class
-     * that extends `HatchEngine.Scene`.
+     * Adds a scene to the manager. The scene can be an instance of a class that extends
+     * `HatchEngine.Scene` or a class constructor that extends `HatchEngine.Scene`.
+     * If a class is provided, it will be instantiated by `switchTo` when first accessed.
      * @param {string} name - The unique name for the scene (e.g., 'mainMenu', 'level1').
-     * @param {import('./Scene.js').default} sceneInstance - An instance of a scene class.
-     * @throws {Error} If `sceneInstance` is not a valid instance of `engine.Scene`.
+     * @param {import('./Scene.js').default | Function} sceneClassOrInstance - An instance or constructor of a scene class.
+     * @throws {TypeError} If `sceneClassOrInstance` is not a valid Scene instance or Scene constructor.
      */
-    add(name, sceneInstance) {
-        if (!(sceneInstance instanceof this.engine.Scene)) {
-             const errorMsg = `SceneManager.add: Attempted to add object for name '${name}' which is not an instance of engine.Scene.`;
-             console.error(errorMsg, sceneInstance);
-             this.engine.errorHandler.handle(new TypeError(errorMsg), { context: 'SceneManager.add', sceneName: name, providedObject: sceneInstance });
-             return; // Or throw new TypeError(errorMsg);
+    add(name, sceneClassOrInstance) {
+        let isValid = false;
+        let typeAdded = '';
+
+        if (typeof sceneClassOrInstance === 'function' && sceneClassOrInstance.prototype instanceof this.engine.Scene) {
+            isValid = true;
+            typeAdded = 'class';
+        } else if (sceneClassOrInstance instanceof this.engine.Scene) {
+            isValid = true;
+            typeAdded = 'instance';
         }
+
+        if (!isValid) {
+            const errorMsg = `SceneManager.add: Attempted to add object for name '${name}' which is not a valid Scene instance or Scene constructor.`;
+            console.error(errorMsg, sceneClassOrInstance);
+            this.engine.errorHandler.handle(new TypeError(errorMsg), { context: 'SceneManager.add', sceneName: name, providedValue: sceneClassOrInstance });
+            return;
+        }
+
         if (this.scenes.has(name)) {
-            console.warn(`SceneManager.add: Scene with name '${name}' already exists. Overwriting with new instance.`);
-            const oldScene = this.scenes.get(name);
-            if (oldScene && typeof oldScene.destroy === 'function') {
+            const oldEntry = this.scenes.get(name);
+            // If the old entry is an instance and has a destroy method, call it.
+            if (typeof oldEntry !== 'function' && oldEntry && typeof oldEntry.destroy === 'function') {
+                console.warn(`SceneManager.add: Scene with name '${name}' already exists (was an instance). Destroying old instance before overwriting.`);
                 try {
-                    console.log(`SceneManager.add: Destroying old scene instance '${name}' before overwriting.`);
-                    oldScene.destroy();
+                    oldEntry.destroy();
                 } catch (e) {
                     this.engine.errorHandler.error(
-                        `SceneManager.add: Error while destroying old scene '${name}'.`,
+                        `SceneManager.add: Error while destroying old scene instance '${name}'.`,
                         { context: 'SceneManager.add.destroyOldScene', sceneName: name, originalError: e }
                     );
                 }
+            } else {
+                 console.warn(`SceneManager.add: Scene or class with name '${name}' already exists. Overwriting.`);
             }
         }
-        this.scenes.set(name, sceneInstance);
-        console.log(`SceneManager: Scene '${name}' (instance of ${sceneInstance.constructor.name}) added.`);
+
+        this.scenes.set(name, sceneClassOrInstance);
+        if (typeAdded === 'class') {
+            console.log(`SceneManager: Scene class '${sceneClassOrInstance.name}' registered as '${name}'. It will be instantiated on first switch.`);
+        } else {
+            console.log(`SceneManager: Scene instance '${name}' (instance of ${sceneClassOrInstance.constructor.name}) added.`);
+        }
     }
 
     /**
@@ -85,16 +105,45 @@ class SceneManager {
      * @throws {Error} If the scene `name` is not found, or if `load`, `init`, or `enter` methods of the new scene throw an error.
      */
     async switchTo(name, ...args) {
-        const newScene = this.scenes.get(name);
+        let newSceneEntry = this.scenes.get(name);
+        let newScene;
 
-        if (!newScene) {
-            const error = new Error(`SceneManager.switchTo: Scene "${name}" not found.`);
+        if (!newSceneEntry) {
+            const error = new Error(`SceneManager.switchTo: Scene or scene class "${name}" not found.`);
             // .handle with critical:true is expected to call .critical, which throws.
             this.engine.errorHandler.handle(error, { context: 'SceneManager.switchTo', sceneName: name, originalError: error }, true);
             // If errorHandler.handle didn't throw, the error would be swallowed.
             // Assuming critical path in errorHandler always throws.
             return; // Should not be reached if critical error is thrown. Added for logical clarity.
         }
+
+        if (typeof newSceneEntry === 'function') { // It's a class, needs instantiation
+            console.log(`SceneManager.switchTo: Instantiating scene class for '${name}'.`);
+            try {
+                const sceneInstance = new newSceneEntry(this.engine);
+                if (!(sceneInstance instanceof this.engine.Scene)) {
+                     throw new TypeError(`Instantiated scene for '${name}' is not an instance of engine.Scene.`);
+                }
+                this.scenes.set(name, sceneInstance); // Replace class with instance in the map
+                newScene = sceneInstance;
+                console.log(`SceneManager.switchTo: Scene '${name}' instantiated from class.`);
+            } catch (instantiationError) {
+                this.engine.errorHandler.critical(
+                    `SceneManager.switchTo: Failed to instantiate scene class for '${name}'. Error: ${instantiationError.message}`,
+                    { context: 'SceneManager.switchTo.instantiation', sceneName: name, originalError: instantiationError }
+                );
+                return; // Stop if instantiation fails
+            }
+        } else { // It's already an instance
+            newScene = newSceneEntry;
+        }
+
+        if (!newScene) { // Should not happen if logic above is correct, but as a safeguard
+            const error = new Error(`SceneManager.switchTo: Scene "${name}" could not be resolved to an instance.`);
+            this.engine.errorHandler.critical(error.message, { context: 'SceneManager.switchTo.resolveInstance', sceneName: name });
+            return;
+        }
+
 
         if (this.currentScene && typeof this.currentScene.exit === 'function') {
             try {

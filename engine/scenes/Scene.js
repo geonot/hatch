@@ -46,6 +46,24 @@ class Scene {
     }
 
     /**
+     * Convenience accessor for the engine's camera.
+     * @type {import('../rendering/Camera.js').default | null}
+     * @readonly
+     */
+    get camera() {
+        return this.renderingEngine ? this.renderingEngine.camera : null;
+    }
+
+    /**
+     * Convenience accessor for the loaded project configuration (from hatch.config.yaml).
+     * @type {Object | null}
+     * @readonly
+     */
+    get hatchConfig() {
+        return this.engine ? this.engine.hatchConfig : null;
+    }
+
+    /**
      * Asynchronous method called by the SceneManager when the scene is being prepared to be shown.
      * Subclasses should override this to load any assets specific to this scene
      * using `this.assetManager.loadAsset()` or `this.assetManager.loadManifest()`.

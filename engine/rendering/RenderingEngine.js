@@ -304,7 +304,7 @@ class RenderingEngine {
         this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0); // Screen space for overlay
 
         // Configurable debug styles with defaults
-        const debugConfig = this.engine.config?.renderer?.debug || this.engine.config?.debug || {};
+        const debugConfig = this.engine.hatchConfig?.renderer?.debug || this.engine.hatchConfig?.debug || {};
 
         const fontFamily = debugConfig.fontFamily || 'Arial';
         const baseFontSize = debugConfig.fontSize || 12; // Logical pixels
