@@ -1,0 +1,5 @@
+{
+    "message": "hello world",
+    "value": 42,
+    "description": "This is a test JSON file for asset loading."
+}

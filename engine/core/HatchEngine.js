@@ -94,14 +94,53 @@ export class HatchEngine {
         this.lastTime = currentTime;
 
         this.eventBus.emit('engine:update', deltaTime);
-        // console.log('Engine tick:', deltaTime); // Placeholder for actual update logic. Can be very noisy.
 
-        // Placeholder: Clear canvas (will be moved to RenderingEngine or Scene rendering)
-        if (this.ctx) {
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Scene updates (driven by engine:update or directly)
+        if (this.sceneManager && typeof this.sceneManager.update === 'function') {
+            this.sceneManager.update(deltaTime);
+        } else if (!this.sceneManager) {
+            // console.warnOnce('HatchEngine:_loop: this.sceneManager is not available for updates.'); // Requires console.warnOnce utility
         }
 
-        this.eventBus.emit('engine:render', this);
+
+        // Rendering
+        if (this.renderingEngine) {
+            // 1. Clear canvas (responsibility of RenderingEngine)
+            this.renderingEngine.clear();
+
+            // 2. Apply camera transformations
+            // Assuming renderingEngine.context and renderingEngine.camera are valid
+            this.renderingEngine.context.save(); // Save context state before camera transform
+            this.renderingEngine.camera.applyTransform(this.renderingEngine.context);
+
+            // 3. Scene-specific rendering (scene tells renderingEngine what to draw)
+            if (this.sceneManager && typeof this.sceneManager.render === 'function') {
+                this.sceneManager.render(this.renderingEngine);
+            }
+
+            // 4. Render all objects added by the scene to the RenderingEngine's list
+            this.renderingEngine.renderManagedDrawables();
+
+            // 5. Restore context to pre-camera state (for UI, debug info)
+            this.renderingEngine.context.restore();
+
+            // 6. Draw debug information (if enabled)
+            // showDebugInfo might be on engine.config or renderingEngine itself
+            const showDebug = (this.hatchConfig && this.hatchConfig.debug && this.hatchConfig.debug.showStats) ||
+                              (this.renderingEngine.showDebugInfo); // Assuming RE might have its own flag
+            if (showDebug) {
+                this.renderingEngine.drawDebugInfo();
+            }
+
+        } else if (!this.renderingEngine) {
+            // console.warnOnce('HatchEngine:_loop: this.renderingEngine is not available for rendering.');
+             // Fallback clear if no rendering engine, but this path indicates a setup issue.
+            if (this.ctx) {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+
+        this.eventBus.emit('engine:render', this); // Event indicating render phase is complete or ongoing
 
         requestAnimationFrame(this._loop.bind(this));
     }

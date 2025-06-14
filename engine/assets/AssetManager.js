@@ -61,6 +61,56 @@ class AssetManager {
     // _loadJSON(path, name) { /* ... fetch(path).then(res => res.json()) ... */ }
 
     /**
+     * Loads an audio asset from the given path.
+     * @param {string} path - The URL or path to the audio file.
+     * @param {string} name - The unique name used to identify this asset (for error reporting).
+     * @returns {Promise<HTMLAudioElement>} A promise that resolves with the loaded HTMLAudioElement
+     *                                      or rejects with an Error if loading fails.
+     * @private
+     */
+    _loadAudio(path, name) {
+        return new Promise((resolve, reject) => {
+            const audio = new Audio();
+            audio.addEventListener('canplaythrough', () => {
+                resolve(audio);
+            });
+            audio.addEventListener('error', () => {
+                reject(new Error(`AssetManager: Failed to load audio '${name}' at path '${path}'.`));
+            });
+            audio.src = path;
+            audio.preload = 'auto';
+            audio.load();
+        });
+    }
+
+    /**
+     * Loads a JSON asset from the given path.
+     * @param {string} path - The URL or path to the JSON file.
+     * @param {string} name - The unique name used to identify this asset (for error reporting).
+     * @returns {Promise<Object>} A promise that resolves with the parsed JSON object
+     *                            or rejects with an Error if loading or parsing fails.
+     * @private
+     */
+    _loadJSON(path, name) {
+        return new Promise((resolve, reject) => {
+            fetch(path)
+                .then(response => {
+                    if (!response.ok) {
+                        reject(new Error(`AssetManager: Failed to fetch JSON '${name}' from '${path}'. Status: ${response.status}`));
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    resolve(data);
+                })
+                .catch(error => {
+                    // This will catch network errors or errors from response.json() if parsing fails
+                    reject(new Error(`AssetManager: Error loading or parsing JSON '${name}' from '${path}'. ${error.message}`));
+                });
+        });
+    }
+
+    /**
      * Loads an asset based on its description (name, path, type).
      * If the asset is already loaded, it returns the cached asset.
      * If the asset is currently being loaded, it returns the existing loading promise.
@@ -93,15 +143,14 @@ class AssetManager {
                 console.log(`AssetManager: Loading image asset: '${name}' from path: ${path}`);
                 loadPromise = this._loadImage(path, name);
                 break;
-            // TODO: Implement other asset types
-            // case 'audio':
-            //     console.log(`AssetManager: Loading audio asset: '${name}' from ${path}`);
-            //     loadPromise = this._loadAudio(path, name); // Assuming _loadAudio exists
-            //     break;
-            // case 'json':
-            //     console.log(`AssetManager: Loading JSON asset: '${name}' from ${path}`);
-            //     loadPromise = this._loadJSON(path, name); // Assuming _loadJSON exists
-            //     break;
+            case 'audio':
+                console.log(`AssetManager: Loading audio asset: '${name}' from path: ${path}`);
+                loadPromise = this._loadAudio(path, name);
+                break;
+            case 'json':
+                console.log(`AssetManager: Loading JSON asset: '${name}' from path: ${path}`);
+                loadPromise = this._loadJSON(path, name);
+                break;
             default:
                 console.warn(`AssetManager: Asset type '${type}' for asset '${name}' is not currently supported.`);
                 return Promise.resolve(null); // Or reject(new Error(...))
@@ -116,13 +165,18 @@ class AssetManager {
             return asset;
         } catch (error) {
             // The error from _loadImage or other loaders should be an Error instance.
-            this.engine.errorHandler.handle(error, {
-                phase: 'AssetLoading',
-                assetName: name,
-                assetPath: path,
-                assetType: type
-            }, true); // Consider asset loading failures as potentially critical for scene setup.
-            throw error; // Re-throw to allow the caller (e.g., Scene.load) to handle it.
+            // Using critical as it logs the error and re-throws, matching previous behavior.
+            this.engine.errorHandler.critical(
+                error.message, // Pass the error message string
+                {
+                    phase: 'AssetLoading',
+                    assetName: name,
+                    assetPath: path,
+                    assetType: type,
+                    originalError: error // Pass the original error object for more context
+                }
+            );
+            // critical already throws, so no need to re-throw here.
         } finally {
             // Remove the promise from the map once it has settled (either resolved or rejected).
             this.promises.delete(name);
@@ -157,24 +211,33 @@ class AssetManager {
      */
     async loadManifest(manifest) {
         if (typeof manifest === 'string') {
-            console.warn("AssetManager.loadManifest: Loading manifest from a file path is not yet implemented. Please provide a manifest object.");
-            // Future: Fetch and parse manifest if it's a string (URL/path)
-            // try {
-            //     const response = await fetch(manifest);
-            //     if (!response.ok) throw new Error(`Failed to fetch manifest from ${manifest}: ${response.statusText}`);
-            //     manifest = await response.json();
-            // } catch (error) {
-            //     this.engine.errorHandler.handle(error, { context: 'ManifestLoading', manifestPath: manifest }, true);
-            //     return; // Or throw
-            // }
-            return;
+            const manifestPath = manifest; // Keep original path for error reporting
+            try {
+                console.log(`AssetManager.loadManifest: Fetching manifest from URL: ${manifestPath}`);
+                const response = await fetch(manifestPath);
+                if (!response.ok) {
+                    const errorMsg = `AssetManager: Failed to fetch manifest from '${manifestPath}'. Status: ${response.status}`;
+                    this.engine.errorHandler.error(errorMsg, { context: 'ManifestLoading', manifestPath });
+                    return; // Stop processing if manifest fetch fails
+                }
+                manifest = await response.json();
+                console.log(`AssetManager.loadManifest: Manifest successfully loaded and parsed from ${manifestPath}.`);
+            } catch (error) {
+                // This catches network errors or errors from response.json() if parsing fails
+                const errorMsg = `AssetManager: Error loading or parsing manifest JSON from '${manifestPath}'. Original error: ${error.message}`;
+                this.engine.errorHandler.error(errorMsg, { context: 'ManifestLoading', manifestPath, originalError: error });
+                return; // Stop processing if manifest loading/parsing fails
+            }
         }
 
         if (manifest && manifest.assets && Array.isArray(manifest.assets)) {
             const loadPromises = [];
             for (const assetInfo of manifest.assets) {
                 if (!assetInfo.name || !assetInfo.path || !assetInfo.type) {
-                    console.warn("AssetManager.loadManifest: Skipping invalid asset entry in manifest (missing name, path, or type):", assetInfo);
+                    this.engine.errorHandler.warn(
+                        "AssetManager.loadManifest: Skipping invalid asset entry in manifest (missing name, path, or type).",
+                        { context: 'ManifestLoading.invalidEntry', assetInfo }
+                    );
                     continue;
                 }
                 loadPromises.push(this.loadAsset(assetInfo));
@@ -185,13 +248,14 @@ class AssetManager {
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
                     const assetInfo = manifest.assets[index];
-                    console.warn(`AssetManager.loadManifest: Failed to load asset '${assetInfo.name}' from manifest. Reason: ${result.reason?.message || 'Unknown error'}`);
+                    // This console.warn is acceptable as loadAsset itself would have used errorHandler.critical
+                    // This is more of a summary log for the manifest loading process.
+                    console.warn(`AssetManager.loadManifest: Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`);
                 }
             });
         } else {
             const errorMsg = "AssetManager.loadManifest: Manifest object is invalid or missing the 'assets' array.";
-            console.warn(errorMsg, manifest);
-            // this.engine.errorHandler.handle(new Error(errorMsg), { context: 'ManifestLoading', manifestObject: manifest });
+            this.engine.errorHandler.warn(errorMsg, { context: 'ManifestLoading.invalidManifest', manifestObject: manifest });
         }
     }
 

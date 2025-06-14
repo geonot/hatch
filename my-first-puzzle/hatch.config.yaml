@@ -1,68 +1,75 @@
 # hatch.config.yaml
 # Configuration file for HatchEngine projects
 
-project:
+projectName: "My First Puzzle" # Changed from project.name for simplicity with current parser
+version: "0.1.0"
+canvasId: "gameCanvas" # The ID of the HTML canvas element to use
+gameWidth: 800             # Default width of the game canvas
+gameHeight: 600            # Default height of the game canvas
+initialScene: TestScene # Specify the initial scene to load, capitalized
+assetManifest: assets/asset-manifest.json # Added for AssetManager
+showDebugInfo: true    # Explicitly enable debug info via config
+
+# The following are original, more complex configurations, kept for reference
+# but the simple parser in current main.js templates won't use them deeply.
+project_details: # Renamed to avoid conflict if parser just takes first part of project.name
   name: "My First Puzzle"
   version: "0.1.0"
   # description: "A simple puzzle game built with HatchEngine."
   # authors: ["Your Name"]
 
-engine:
-  canvasId: "gameCanvas" # The ID of the HTML canvas element to use
-  width: 800             # Default width of the game canvas
-  height: 600            # Default height of the game canvas
-  initialScene: testScene # Specify the initial scene to load
-  showDebugInfo: true    # Explicitly enable debug info via config
-  # targetFps: 60        # Target frames per second (not directly used by core loop, but can be for game logic)
+engine_settings: # Renamed
+  canvasId_detail: "gameCanvas"
+  width_detail: 800
+  height_detail: 600
+  initialScene_detail: testScene
+  showDebugInfo_detail: true
+  # targetFps: 60
   # rendering:
-    # backend: "canvas2d" # e.g., "webgl", "canvas2d"
+    # backend: "canvas2d"
     # antiAlias: true
   # audio:
     # enable: true
     # defaultVolume: 0.8
 
 # Asset manager configuration (Example)
-# assets:
-  # basePath: "assets/"
-  # manifest: "asset-manifest.json" # A file listing all assets to preload
+assets_config: # Renamed
+  basePath: "assets/"
+  manifest_detail: "asset-manifest.json"
   # preload:
     # - "images/spritesheet.png"
     # - "audio/background_music.mp3"
 
 # Scene manager configuration (Example)
-# scenes:
-  # initialScene: "mainMenu"
+scenes_config: # Renamed
+  initialScene_detail2: "mainMenu"
   # sceneList:
     # - id: "mainMenu"
-      # path: "scenes/MainMenuScene.js" # Path to the scene file
+      # path: "scenes/MainMenuScene.js"
     # - id: "level1"
       # path: "scenes/Level1Scene.js"
 
-# Game-specific configurations can be nested under a 'game' key or other custom keys
-# game:
-  # difficulty: "normal"
+game_config: # Renamed
+  difficulty: "normal"
   # player:
     # initialHealth: 100
     # speed: 5
   # levels:
     # total: 3
-    # unlockType: "sequential" # "sequential" or "scoreBased"
+    # unlockType: "sequential"
 
-# Input configuration (Example)
-# input:
+input_config: # Renamed
   # keybindings:
     # moveUp: "KeyW"
     # moveDown: "KeyS"
     # action: "Space"
   # mouseSensitivity: 1.0
 
-# Development server settings (if applicable, for a custom dev server)
-# devServer:
-  # port: 3000
+devServer_config: # Renamed
+  port: 3000
   # openBrowser: true
 
-# Build settings (if applicable, for a custom build process)
-# build:
-  # outputDir: "dist/"
+build_config: # Renamed
+  outputDir: "dist/"
   # minify: true
   # sourceMaps: false

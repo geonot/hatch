@@ -1,11 +1,11 @@
-import { HatchEngine } from '../../engine/core/HatchEngine.js'; // Adjusted path
-import { AssetManager } from '../../engine/assets/AssetManager.js'; // Adjusted path
-import { InputManager } from '../../engine/input/InputManager.js'; // Adjusted path
-import { RenderingEngine } from '../../engine/rendering/RenderingEngine.js'; // Adjusted path
-import { SceneManager } from '../../engine/scenes/SceneManager.js'; // Adjusted path
+import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
+import { AssetManager } from 'hatch-engine/assets/AssetManager.js';
+import { InputManager } from 'hatch-engine/input/InputManager.js';
+import { RenderingEngine } from 'hatch-engine/rendering/RenderingEngine.js';
+import { SceneManager } from 'hatch-engine/scenes/SceneManager.js';
 import TestScene from './scenes/TestScene.js';
 
-console.log("Hatch game starting (my-first-puzzle using new main.js structure)...");
+console.log("Hatch game starting...");
 
 // Function to load and parse hatch.config.yaml
 async function loadConfig() {
@@ -28,27 +28,22 @@ async function loadConfig() {
         if (config.gameHeight) config.gameHeight = parseInt(config.gameHeight, 10);
         if (isNaN(config.gameWidth)) config.gameWidth = 800; // Default if parsing failed
         if (isNaN(config.gameHeight)) config.gameHeight = 600; // Default if parsing failed
-
-        // Ensure initialScene is correctly read or defaulted
-        if (!config.initialScene) config.initialScene = 'TestScene'; // Default if not in YAML
-        if (!config.assetManifest) config.assetManifest = 'assets/asset-manifest.json'; // Default
-
         return config;
     } catch (e) {
         console.error("Failed to load or parse hatch.config.yaml", e);
         // Fallback or default config
         return {
-            projectName: 'MyFirstPuzzle (Fallback)',
+            projectName: 'MyHatchGame',
             canvasId: 'gameCanvas',
             gameWidth: 800,
             gameHeight: 600,
-            initialScene: 'TestScene',
-            assetManifest: 'assets/asset-manifest.json' // Ensure this is present for fallback
+            initialScene: 'TestScene'
+            // assetManifest will be undefined, so manifest loading will be skipped or handled by AssetManager if path is null/undefined
         };
     }
 }
 
-async function gameMain() {
+async function gameMain() { // Renamed to avoid conflict with outer 'main'
     const hatchConfig = await loadConfig();
 
     const engineConfig = {
@@ -64,14 +59,16 @@ async function gameMain() {
         engine.init(); // Sets up engine.canvas and engine.ctx
 
         // Instantiate managers and attach to the engine instance
+        // These managers might need the engine instance for error handling, event bus, or config
         engine.assetManager = new AssetManager(engine);
-        engine.inputManager = new InputManager(engine, engine.canvas);
-        engine.renderingEngine = new RenderingEngine(engine.canvas, engine);
+        engine.inputManager = new InputManager(engine, engine.canvas); // InputManager needs canvas for event listeners
+        engine.renderingEngine = new RenderingEngine(engine.canvas, engine); // RenderingEngine needs canvas
         engine.sceneManager = new SceneManager(engine);
 
         // Load asset manifest if specified in config
         if (hatchConfig.assetManifest && engine.assetManager) {
             try {
+                // AssetManager.loadManifest now supports string paths directly
                 await engine.assetManager.loadManifest(hatchConfig.assetManifest);
                 console.log(`Asset manifest '${hatchConfig.assetManifest}' loaded or loading initiated.`);
             } catch (e) {
@@ -82,13 +79,13 @@ async function gameMain() {
 
         // Add and switch to the initial scene
         if (engine.sceneManager && TestScene) {
-            engine.sceneManager.add(hatchConfig.initialScene, new TestScene(engine)); // Use initialScene from config
-            await engine.sceneManager.switchTo(hatchConfig.initialScene);
-            console.log(`Switched to initial scene: ${hatchConfig.initialScene}`);
+            engine.sceneManager.add(hatchConfig.initialScene || 'TestScene', new TestScene(engine));
+            await engine.sceneManager.switchTo(hatchConfig.initialScene || 'TestScene');
+            console.log(`Switched to initial scene: ${hatchConfig.initialScene || 'TestScene'}`);
         } else {
             const missingComponent = !engine.sceneManager ? "SceneManager" : "TestScene";
             engine.errorHandler.critical(`Failed to initialize scenes: ${missingComponent} is not available.`);
-            return;
+            return; // Stop if scene setup cannot proceed
         }
 
         console.log("Engine initialized from main.js with managers and scene.");

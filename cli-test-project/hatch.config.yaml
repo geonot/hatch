@@ -1,0 +1,6 @@
+projectName: cli-test-project
+canvasId: gameCanvas
+gameWidth: 800
+gameHeight: 600
+initialScene: TestScene
+assetManifest: assets/asset-manifest.json

@@ -118,23 +118,22 @@ class Camera {
      */
     isRectInView({ x, y, width, height }) {
         // More accurate culling (still AABB):
-        // const viewHalfWidth = (this.viewportWidth / 2) / this.zoom;
-        // const viewHalfHeight = (this.viewportHeight / 2) / this.zoom;
-        // const viewLeft = this.x - viewHalfWidth;
-        // const viewRight = this.x + viewHalfWidth;
-        // const viewTop = this.y - viewHalfHeight;
-        // const viewBottom = this.y + viewHalfHeight;
+        const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom; // Prevent zero or negative zoom
+        const viewHalfWidth = (this.viewportWidth / 2) / currentZoom;
+        const viewHalfHeight = (this.viewportHeight / 2) / currentZoom;
+        const viewLeft = this.x - viewHalfWidth;
+        const viewRight = this.x + viewHalfWidth;
+        const viewTop = this.y - viewHalfHeight;
+        const viewBottom = this.y + viewHalfHeight;
 
-        // const rectRight = x + width;
-        // const rectBottom = y + height;
+        const rectRight = x + width;
+        const rectBottom = y + height;
 
-        // // Check for non-overlap
-        // if (rectRight < viewLeft || x > viewRight || rectBottom < viewTop || y > viewBottom) {
-        //     return false; // Definitely not in view
-        // }
-        // return true; // Potentially in view
-
-        return true; // Placeholder as per original requirements for this phase
+        // Check for non-overlap
+        if (rectRight < viewLeft || x > viewRight || rectBottom < viewTop || y > viewBottom) {
+            return false; // Definitely not in view
+        }
+        return true; // Potentially in view
     }
 
     // --- Potential future enhancements ---

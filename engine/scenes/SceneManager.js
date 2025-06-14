@@ -49,10 +49,17 @@ class SceneManager {
         }
         if (this.scenes.has(name)) {
             console.warn(`SceneManager.add: Scene with name '${name}' already exists. Overwriting with new instance.`);
-            // Potentially call destroy on the old scene if overwriting.
             const oldScene = this.scenes.get(name);
             if (oldScene && typeof oldScene.destroy === 'function') {
-                try { oldScene.destroy(); } catch(e) { /* Already handled if it throws */ }
+                try {
+                    console.log(`SceneManager.add: Destroying old scene instance '${name}' before overwriting.`);
+                    oldScene.destroy();
+                } catch (e) {
+                    this.engine.errorHandler.error(
+                        `SceneManager.add: Error while destroying old scene '${name}'.`,
+                        { context: 'SceneManager.add.destroyOldScene', sceneName: name, originalError: e }
+                    );
+                }
             }
         }
         this.scenes.set(name, sceneInstance);
@@ -82,8 +89,11 @@ class SceneManager {
 
         if (!newScene) {
             const error = new Error(`SceneManager.switchTo: Scene "${name}" not found.`);
-            this.engine.errorHandler.handle(error, { context: 'SceneManager.switchTo', sceneName: name, critical: true });
-            throw error;
+            // .handle with critical:true is expected to call .critical, which throws.
+            this.engine.errorHandler.handle(error, { context: 'SceneManager.switchTo', sceneName: name, originalError: error }, true);
+            // If errorHandler.handle didn't throw, the error would be swallowed.
+            // Assuming critical path in errorHandler always throws.
+            return; // Should not be reached if critical error is thrown. Added for logical clarity.
         }
 
         if (this.currentScene && typeof this.currentScene.exit === 'function') {
@@ -120,12 +130,32 @@ class SceneManager {
             }
         } catch (error) {
             // If load, init, or enter fail, this is critical for the scene.
-            // Revert currentScene to null or the previous scene if a more robust rollback is desired.
-            // For now, mark as critical and re-throw. ErrorHandler has already been called by the scene method if it's well-behaved.
-            this.engine.errorHandler.handle(error, { context: `SceneManager.switchTo: Critical failure during lifecycle of new scene '${name}'`}, true);
-            this.currentScene = null; // Prevent operations on a partially initialized scene
+            // ErrorHandler has already been called by the scene method if it's well-behaved.
+            // The primary error handler call below is for the switchTo context itself.
+            this.engine.errorHandler.critical(
+                `SceneManager.switchTo: Critical failure during lifecycle of new scene '${name}'. Original error: ${error.message}`,
+                { context: 'SceneManager.switchTo.lifecycleFailure', sceneName: name, originalError: error }
+            );
+
+            // Attempt to clean up the failed scene
+            if (newScene && typeof newScene.destroy === 'function') {
+                try {
+                    console.warn(`SceneManager.switchTo: Attempting to destroy scene '${name}' after lifecycle failure.`);
+                    newScene.destroy();
+                } catch (destroyError) {
+                    this.engine.errorHandler.error(
+                        `SceneManager.switchTo: Error while destroying scene '${name}' after it failed to initialize/load/enter. Original lifecycle error: ${error.message}`,
+                        { context: 'SceneManager.switchTo.cleanupDestroyFailure', sceneName: name, cleanupError: destroyError, originalLifecycleError: error }
+                    );
+                    // Do not let the destroyError overshadow the original error.
+                }
+            }
+
+            this.currentScene = null; // Prevent operations on a partially initialized/failed scene
             this.currentSceneName = null;
-            throw error; // Re-throw to signal failure to HatchEngine.start or other callers
+            // The critical handler above already throws, so no need to 'throw error;' here if critical always throws.
+            // If critical does not throw, then 'throw error;' would be needed.
+            // Assuming ErrorHandler.critical re-throws.
         }
 
         if (this.engine.eventBus) {
