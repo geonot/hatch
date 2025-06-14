@@ -1,99 +1,85 @@
-/**
- * @file ErrorHandler.js
- * @description Centralized error handling module for the HatchEngine.
- * This class provides a consistent way to report, log, and manage errors
- * that occur within the engine or game.
- */
-
-/**
- * @class ErrorHandler
- * @classdesc Manages error logging and reporting for the engine.
- * It can store a log of errors and emit error events via the engine's EventBus.
- */
-class ErrorHandler {
-    /**
-     * Creates an instance of ErrorHandler.
-     * @param {import('./HatchEngine.js').default} engine - A reference to the HatchEngine instance.
-     *        Used to access other engine systems like the EventBus if available.
-     */
-    constructor(engine) {
-        /**
-         * A reference to the HatchEngine instance.
-         * @type {import('./HatchEngine.js').default}
-         * @public
-         */
-        this.engine = engine;
-        /**
-         * Stores a log of all errors handled.
-         * @type {Array<Object>}
-         * @private
-         */
-        this.errorLog = [];
+export class ErrorHandler {
+    constructor(eventBus = null) {
+        this.eventBus = eventBus;
+        // A simple debug flag, could be controlled by config or environment variable later
+        this.isDebugMode = false;
+        // console.log('[ErrorHandler] Initialized'); // Optional
     }
 
-    /**
-     * Handles an error by logging it to the console, storing it in an internal log,
-     * and optionally emitting an 'engine:error' event through the engine's EventBus.
-     * If the error is marked as critical, it may suggest further action like stopping the engine.
-     *
-     * @param {Error} error - The JavaScript Error object that was caught.
-     * @param {Object} [context={}] - An optional object providing additional context about the error's circumstances.
-     *                                This can include information like the system where the error occurred, relevant data, etc.
-     * @param {boolean} [critical=false] - A flag indicating if the error is considered critical.
-     *                                     Critical errors might warrant stopping the engine or other drastic measures.
-     */
-    handle(error, context = {}, critical = false) {
-        const timestamp = new Date().toISOString();
-        const errorEntry = {
-            timestamp,
-            message: error.message,
-            name: error.name, // Include error name (e.g., TypeError, RangeError)
-            stack: error.stack,
-            context,
-            critical,
-        };
+    _getConsoleLevel(level) {
+        switch (level) {
+            case 'critical': // critical will use console.error
+            case 'error':
+                return 'error';
+            case 'warn':
+                return 'warn';
+            case 'info':
+                return 'info';
+            case 'debug':
+                // console.debug might not be available or visible in all browsers by default
+                // using 'log' for debug ensures it's processed by default unless filtered by isDebugMode
+                return typeof console.debug === 'function' ? 'debug' : 'log';
+            default:
+                return 'log';
+        }
+    }
 
-        this.errorLog.push(errorEntry);
-
-        // Construct a more detailed error message for the console
-        let consoleErrorMessage = `[${timestamp}] ${critical ? 'CRITICAL ' : ''}Error: ${error.name}: ${error.message}`;
-        if (context && Object.keys(context).length > 0) {
-            consoleErrorMessage += ` | Context: ${JSON.stringify(context)}`;
+    log(level, message, errorObject = null) {
+        if (level === 'debug' && !this.isDebugMode) {
+            return; // Don't log debug messages if not in debug mode
         }
 
-        console.error(consoleErrorMessage);
-        if (error.stack) {
-            console.error("Stack Trace:", error.stack);
+        const consoleLevel = this._getConsoleLevel(level);
+        const formattedMessage = `[HATCH|${level.toUpperCase()}] ${message}`;
+
+        const logger = console[consoleLevel] || console.log; // Fallback to console.log
+
+        if (errorObject) {
+            logger(formattedMessage, errorObject);
+        } else {
+            logger(formattedMessage);
         }
 
-
-        if (this.engine && this.engine.eventBus && typeof this.engine.eventBus.emit === 'function') {
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
             try {
-                this.engine.eventBus.emit('engine:error', { error: errorEntry });
-            } catch (eventBusError) {
-                console.error("ErrorHandler: Failed to emit 'engine:error' event via EventBus.", eventBusError);
+                this.eventBus.emit('error:logged', { level, message, errorObject });
+            } catch (e) {
+                // Fallback console.error to avoid loop if eventBus itself has an issue.
+                console.error('[ErrorHandler] Critical: Failed to emit error:logged event:', e);
             }
         }
+    }
 
-        if (critical) {
-            // For critical errors, the primary responsibility here is to report.
-            // The decision to stop the engine should ideally be handled by the code that catches the critical error,
-            // or by a global error handler that listens to 'engine:error' events.
-            console.warn(`ErrorHandler: A critical error was encountered (see above). Depending on the engine's design, this might require stopping or resetting the application.`);
-            // Example: if (this.engine && typeof this.engine.stop === 'function') { this.engine.stop(); }
-        }
+    critical(message, errorObject = null) {
+        this.log('critical', message, errorObject);
+        // Ensure the message in the thrown error is the original, not the formatted one.
+        throw new Error(message);
+    }
+
+    error(message, errorObject = null) {
+        this.log('error', message, errorObject);
+    }
+
+    warn(message, errorObject = null) {
+        this.log('warn', message, errorObject);
+    }
+
+    info(message, errorObject = null) {
+        this.log('info', message, errorObject);
+    }
+
+    debug(message, errorObject = null) {
+        // Debug mode check is handled in the main log method
+        this.log('debug', message, errorObject);
     }
 
     /**
-     * Retrieves the log of all errors handled by this ErrorHandler instance.
-     * Each entry in the log contains details about the error, its context, and timestamp.
-     *
-     * @returns {Array<Object>} An array of error entry objects.
-     *                            Each object typically includes `timestamp`, `message`, `name`, `stack`, `context`, and `critical` properties.
+     * Enables or disables debug mode.
+     * @param {boolean} enable - True to enable debug mode, false to disable.
      */
-    getLog() {
-        return [...this.errorLog]; // Return a copy to prevent external modification
+    setDebugMode(enable) {
+        this.isDebugMode = !!enable;
+        // Use 'info' level for this message so it's usually visible.
+        this.info(`Debug mode has been ${this.isDebugMode ? 'enabled' : 'disabled'}.`);
     }
 }
-
-export default ErrorHandler;

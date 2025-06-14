@@ -1,95 +1,46 @@
-/**
- * @file EventBus.js
- * @description A simple event bus system for decoupled communication within the HatchEngine.
- * Allows various parts of the engine or game to subscribe to and emit events
- * without having direct dependencies on each other.
- */
-
-/**
- * @class EventBus
- * @classdesc Provides a publish-subscribe mechanism for events.
- * Listeners can register callbacks for specific event types, and when an event
- * of that type is emitted, all registered callbacks are invoked.
- */
-class EventBus {
-    /**
-     * Creates an instance of EventBus.
-     * Initializes an empty object to store listeners for different event types.
-     */
+export class EventBus {
     constructor() {
-        /**
-         * Stores all registered event listeners.
-         * The keys are event type strings, and the values are arrays of callback functions.
-         * @type {Object<string, Array<Function>>}
-         * @private
-         */
         this.listeners = {};
+        // console.log('[EventBus] Initialized'); // Optional: for debugging
     }
 
-    /**
-     * Registers an event listener for a given event type.
-     * If the same callback is already registered for the event type, it will not be added again.
-     *
-     * @param {string} eventType - The name of the event to listen for (e.g., 'engine:start', 'asset:loaded').
-     * @param {Function} callback - The function to be called when the event is emitted.
-     *                              This function will receive any payload passed during the event emission.
-     */
-    on(eventType, callback) {
+    on(eventName, callback) {
         if (typeof callback !== 'function') {
-            console.warn(`EventBus.on: Provided callback for event type "${eventType}" is not a function.`);
+            console.warn(`[EventBus] Attempted to register non-function callback for event: ${eventName}`);
             return;
         }
-        if (!this.listeners[eventType]) {
-            this.listeners[eventType] = [];
+        if (!this.listeners[eventName]) {
+            this.listeners[eventName] = [];
         }
-        if (!this.listeners[eventType].includes(callback)) {
-            this.listeners[eventType].push(callback);
-        }
+        this.listeners[eventName].push(callback);
+        // console.log(`[EventBus] Listener added for: ${eventName}`); // Optional: for debugging
     }
 
-    /**
-     * Unregisters an event listener for a given event type.
-     * If the specified callback is not found for the event type, this method does nothing.
-     *
-     * @param {string} eventType - The name of the event from which to remove the listener.
-     * @param {Function} callback - The callback function to remove. Must be the same function reference
-     *                              that was used during registration.
-     */
-    off(eventType, callback) {
-        if (this.listeners[eventType]) {
-            this.listeners[eventType] = this.listeners[eventType].filter(
-                (listener) => listener !== callback
-            );
-            if (this.listeners[eventType].length === 0) {
-                delete this.listeners[eventType]; // Clean up if no listeners remain for this type
+    off(eventName, callbackToRemove) {
+        if (!this.listeners[eventName]) {
+            // console.warn(`[EventBus] Attempted to remove listener for non-existent event: ${eventName}`); // Optional
+            return;
+        }
+
+        this.listeners[eventName] = this.listeners[eventName].filter(
+            (callback) => callback !== callbackToRemove
+        );
+        // console.log(`[EventBus] Listener removed for: ${eventName}`); // Optional: for debugging
+    }
+
+    emit(eventName, ...args) {
+        // console.log(`[EventBus] Emitting event: ${eventName}`, args); // Optional: for debugging
+        if (!this.listeners[eventName]) {
+            return;
+        }
+        this.listeners[eventName].forEach((callback) => {
+            try {
+                callback(...args);
+            } catch (error) {
+                // Consider using a more robust error handling mechanism here
+                // For now, just log to console to avoid crashing the event emitter loop
+                console.error(`[EventBus] Error in callback for event "${eventName}":`, error);
             }
-        }
-    }
-
-    /**
-     * Emits an event, calling all registered listeners for that event type.
-     * Callbacks are invoked synchronously in the order they were registered.
-     * If a listener throws an error, it is caught and logged, and other listeners will still be invoked.
-     *
-     * @param {string} eventType - The name of the event to emit.
-     * @param {any} [payload] - Optional data to pass to the event listeners as an argument.
-     */
-    emit(eventType, payload) {
-        if (this.listeners[eventType]) {
-            // Iterate over a copy of the listeners array in case a listener modifies the array (e.g., by calling off())
-            [...this.listeners[eventType]].forEach((callback) => {
-                try {
-                    callback(payload);
-                } catch (error) {
-                    // Standard error logging. Consider using a global error handler if the EventBus has access to one.
-                    console.error(`EventBus: Error in listener for event "${eventType}":`, error.message, error.stack);
-                    // Example: if (this.engine && this.engine.errorHandler) {
-                    //     this.engine.errorHandler.handle(error, { context: `EventBus listener for ${eventType}` });
-                    // }
-                }
-            });
-        }
+        });
     }
 }
-
-export default EventBus;

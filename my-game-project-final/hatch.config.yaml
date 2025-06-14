@@ -1,0 +1,6 @@
+projectName: my-game-project-final
+canvasId: gameCanvas
+gameWidth: 800
+gameHeight: 600
+initialScene: TestScene
+# assetManifest: assets/asset-manifest.json # Will be used later
