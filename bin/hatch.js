@@ -55,11 +55,15 @@ canvasId: gameCanvas
 gameWidth: 800
 gameHeight: 600
 initialScene: TestScene
-# assetManifest: assets/asset-manifest.json # Will be used later`;
+assetManifest: assets/asset-manifest.json`;
         await fs.writeFile(path.join(projectPath, 'hatch.config.yaml'), hatchConfigContent);
 
         const mainJsContent = `import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
-// import TestScene from './scenes/TestScene.js'; // Keep this commented for now
+import { AssetManager } from 'hatch-engine/assets/AssetManager.js';
+import { InputManager } from 'hatch-engine/input/InputManager.js';
+import { RenderingEngine } from 'hatch-engine/rendering/RenderingEngine.js';
+import { SceneManager } from 'hatch-engine/scenes/SceneManager.js';
+import TestScene from './scenes/TestScene.js';
 
 console.log("Hatch game starting...");
 
@@ -94,6 +98,7 @@ async function loadConfig() {
             gameWidth: 800,
             gameHeight: 600,
             initialScene: 'TestScene'
+            // assetManifest will be undefined, so manifest loading will be skipped or handled by AssetManager if path is null/undefined
         };
     }
 }
@@ -111,30 +116,55 @@ async function gameMain() { // Renamed to avoid conflict with outer 'main'
     const engine = new HatchEngine(engineConfig);
 
     try {
-        // engine.init() is synchronous in the current implementation.
-        // If it becomes async, 'await' would be appropriate here.
-        engine.init();
-        console.log("Engine initialized from main.js");
+        engine.init(); // Sets up engine.canvas and engine.ctx
+
+        // Instantiate managers and attach to the engine instance
+        // These managers might need the engine instance for error handling, event bus, or config
+        engine.assetManager = new AssetManager(engine);
+        engine.inputManager = new InputManager(engine, engine.canvas); // InputManager needs canvas for event listeners
+        engine.renderingEngine = new RenderingEngine(engine.canvas, engine); // RenderingEngine needs canvas
+        engine.sceneManager = new SceneManager(engine);
+
+        // Load asset manifest if specified in config
+        if (hatchConfig.assetManifest && engine.assetManager) {
+            try {
+                // AssetManager.loadManifest now supports string paths directly
+                await engine.assetManager.loadManifest(hatchConfig.assetManifest);
+                console.log(\`Asset manifest '\${hatchConfig.assetManifest}' loaded or loading initiated.\`);
+            } catch (e) {
+                console.error("Failed to load asset manifest:", e);
+                engine.errorHandler.error("Failed to load asset manifest", { path: hatchConfig.assetManifest, error: e });
+            }
+        }
+
+        // Add and switch to the initial scene
+        if (engine.sceneManager && TestScene) {
+            engine.sceneManager.add(hatchConfig.initialScene || 'TestScene', new TestScene(engine));
+            await engine.sceneManager.switchTo(hatchConfig.initialScene || 'TestScene');
+            console.log(\`Switched to initial scene: \${hatchConfig.initialScene || 'TestScene'}\`);
+        } else {
+            const missingComponent = !engine.sceneManager ? "SceneManager" : "TestScene";
+            engine.errorHandler.critical(\`Failed to initialize scenes: \${missingComponent} is not available.\`);
+            return; // Stop if scene setup cannot proceed
+        }
+
+        console.log("Engine initialized from main.js with managers and scene.");
         engine.start();
+
     } catch (error) {
         console.error("Error during engine initialization or start:", error);
         if (engine && engine.errorHandler) {
-            // Ensure critical is called on the instance if available
-            engine.errorHandler.critical("Failed to initialize or start engine from main.js", error);
+            engine.errorHandler.critical("Failed to initialize or start engine from main.js", { originalError: error });
         } else {
-            // Fallback if errorHandler itself is not available on engine
             throw error;
         }
     }
-
-    // engine.scenes.add('TestScene', TestScene); // Will be done later
-    // engine.scenes.switchTo(hatchConfig.initialScene || 'TestScene'); // Will be done later
 }
 
 gameMain();`;
         await fs.writeFile(path.join(projectPath, 'src', 'main.js'), mainJsContent);
 
-        const testSceneJsContent = `// import { Scene } from 'hatch-engine'; // Path to engine's Scene class
+        const testSceneJsContent = `import { Scene } from 'hatch-engine/scenes/Scene.js'; // Adjust path if needed
 
 // export default class TestScene extends Scene {
 //     constructor() {
@@ -153,12 +183,47 @@ gameMain();`;
 //         // console.log('TestScene update', deltaTime);
 //     }
 
-//     render(renderingEngine) {
-//         // console.log('TestScene render');
-//         // renderingEngine.clear(); // Example
-//     }
-// }
-console.log("TestScene.js placeholder");`;
+import { Scene } from 'hatch-engine/scenes/Scene.js'; // Adjust path if needed
+
+export default class TestScene extends Scene {
+    constructor(engine) { // Scene constructor expects engine
+        super(engine);
+    }
+
+    load() {
+        console.log('TestScene: load() called');
+        // Example: await this.assetManager.loadAsset({ name: 'testImage', path: '/assets/images/test-sprite.png', type: 'image' });
+    }
+
+    init() {
+        console.log('TestScene: init() called');
+        // Example: if (this.assetManager.get('testImage')) {
+        //     const sprite = new Sprite({ image: this.assetManager.get('testImage'), x: 100, y: 100 });
+        //     this.renderingEngine.add(sprite); // Add to rendering engine for visibility
+        // }
+    }
+
+    update(deltaTime) {
+        // console.log('TestScene: update()', deltaTime);
+    }
+
+    render(renderingEngine) {
+        // console.log('TestScene: render()');
+        // Objects added via this.renderingEngine.add() in init or update will be rendered.
+        // Or, dynamically add here:
+        // renderingEngine.drawText('Hello from TestScene', 50, 50, '20px Arial', 'white');
+    }
+
+    exit() {
+        console.log('TestScene: exit() called');
+    }
+
+    destroy() {
+        console.log('TestScene: destroy() called');
+        // Clean up scene-specific resources
+        // this.renderingEngine.clearDrawables(); // If objects were added directly to RE for this scene.
+    }
+}`;
         await fs.writeFile(path.join(projectPath, 'src', 'scenes', 'TestScene.js'), testSceneJsContent);
 
         const assetManifestContent = `{

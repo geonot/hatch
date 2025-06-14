@@ -37,8 +37,15 @@ class TestScene extends Scene {
                  console.error("TestScene: Player sprite image failed to load.");
             }
             // Tile assets (grass.png, wall.png) will be loaded by TileManager on demand when createTile is called.
+
+            // Load additional assets for testing
+            await this.assetManager.loadAsset({ name: 'testJsonData', path: '/assets/test-data.json', type: 'json' });
+            console.log("TestScene: test-data.json loading initiated.");
+            // Example for audio (requires dummy audio file)
+            // await this.assetManager.loadAsset({ name: 'testAudioSound', path: '/assets/test-sound.mp3', type: 'audio' });
+
         } catch (error) {
-            console.error("TestScene: Error loading player assets:", error);
+            console.error("TestScene: Error loading assets:", error); // Generalize error message
         }
     }
 
@@ -131,6 +138,32 @@ class TestScene extends Scene {
                 console.error("TestScene: Player sprite image not loaded, cannot create player sprite.");
             }
         })();
+
+        // Test getting the newly loaded assets
+        const imgForTestSprite = this.assetManager.get('playerSprite'); // Same image, but for clarity
+        if (imgForTestSprite) {
+            const testSprite = new Sprite({
+                image: imgForTestSprite,
+                x: this.renderingEngine.width / 2,
+                y: this.renderingEngine.height / 2,
+                width: imgForTestSprite.naturalWidth,
+                height: imgForTestSprite.naturalHeight,
+                anchorX: 0.5,
+                anchorY: 0.5,
+                rotation: Math.PI / 4 // Make it visually distinct
+            });
+            this.renderingEngine.add(testSprite); // Add to rendering
+            console.log('TestScene: test-sprite.png (for centered test sprite) loaded and Sprite created.');
+        } else {
+            console.warn('TestScene: test-sprite.png (for centered test sprite) not loaded.');
+        }
+
+        const jsonData = this.assetManager.get('testJsonData');
+        if (jsonData) {
+            console.log('TestScene: test-data.json loaded:', jsonData);
+        } else {
+            console.warn('TestScene: test-data.json not loaded.');
+        }
     }
 
     enter() {

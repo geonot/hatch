@@ -56,11 +56,16 @@ class RenderingEngine {
             }
         } catch (error) {
             if (this.engine && this.engine.errorHandler) {
-                this.engine.errorHandler.handle(error, { phase: "RenderingEngine Constructor", critical: true });
+                // .handle with critical:true is expected to call .critical, which throws.
+                this.engine.errorHandler.handle(error, { phase: "RenderingEngine Constructor", originalError: error }, true);
             } else {
+                // If no error handler, log and re-throw the original error.
                 console.error("Critical Error: RenderingEngine failed to initialize context and no errorHandler is available.", error);
+                throw error;
             }
-            throw error;
+            // If errorHandler.handle with critical:true didn't throw, the error would be swallowed.
+            // However, our ErrorHandler.critical does throw, so this line is typically not reached if errorHandler is present.
+            // If errorHandler is NOT present, the else block above throws.
         }
 
         /** @type {number} */
@@ -107,7 +112,10 @@ class RenderingEngine {
                 this.drawables.push(drawable);
             }
         } else {
-            console.warn("RenderingEngine.add: Attempted to add an invalid or non-renderable object.", drawable);
+            this.engine.errorHandler.warn("RenderingEngine.add: Attempted to add an invalid or non-renderable object.", {
+                context: "RenderingEngine.add",
+                providedObject: drawable
+            });
         }
     }
 
@@ -211,9 +219,25 @@ class RenderingEngine {
      * @param {...number} args - Arguments for `drawImage` (dx, dy, [dWidth, dHeight], [sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight]). World space.
      */
     drawImage(image, ...args) {
+        if (image && image instanceof HTMLImageElement && (image.naturalWidth === 0 || image.naturalHeight === 0)) {
+            if (image.complete) { // Only warn if it's supposedly loaded but has no dimensions
+                 console.warn(`RenderingEngine.drawImage: Attempting to draw image with zero dimensions (naturalWidth: ${image.naturalWidth}, naturalHeight: ${image.naturalHeight}). Source: ${image.src}`);
+            }
+            // Do not attempt to draw if dimensions are zero, as it might cause errors or be pointless.
+            // However, the current structure with try...catch will handle errors if drawImage is called.
+            // For now, just warning. The problem statement implies only adding a check and warning.
+        }
+
         try {
-            this.context.drawImage(image, ...args);
-            this.renderStats.drawCalls++;
+            // It's important that image.complete is true for HTMLImageElement for reliable drawing.
+            // The Sprite class already checks this. If drawing directly, caller should ensure.
+            if (image && (image instanceof HTMLImageElement ? image.complete : true)) {
+                this.context.drawImage(image, ...args);
+                this.renderStats.drawCalls++;
+            } else if (image && image instanceof HTMLImageElement && !image.complete) {
+                // This case should ideally be handled by asset loading or pre-draw checks.
+                console.warn(`RenderingEngine.drawImage: Image not yet complete. Source: ${image.src}`);
+            }
         } catch (error) {
              this.engine.errorHandler.handle(error, {
                 context: "RenderingEngine.drawImage",
@@ -279,32 +303,44 @@ class RenderingEngine {
         this.context.save();
         this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0); // Screen space for overlay
 
-        const baseFontSize = 12;
-        const padding = 5;
-        const x = padding + (5 / this.pixelRatio); // Adjusted for clarity
-        let currentY = padding + (10 / this.pixelRatio);
-        const lineHeight = baseFontSize + (4 / this.pixelRatio);
+        // Configurable debug styles with defaults
+        const debugConfig = this.engine.config?.renderer?.debug || this.engine.config?.debug || {};
 
-        this.context.font = `${baseFontSize / this.pixelRatio}px Arial`;
+        const fontFamily = debugConfig.fontFamily || 'Arial';
+        const baseFontSize = debugConfig.fontSize || 12; // Logical pixels
+        const fontColor = debugConfig.fontColor || 'white';
+        const bgColor = debugConfig.bgColor || 'rgba(0,0,0,0.75)';
+        const padding = debugConfig.padding || 5; // Logical pixels
+        const lineHeightPadding = debugConfig.lineHeightPadding || 4; // Logical pixels
+
+        // Apply pixelRatio for actual rendering dimensions
+        const actualFontSize = baseFontSize / this.pixelRatio;
+        const actualPadding = padding / this.pixelRatio;
+        const actualLineHeight = (baseFontSize + lineHeightPadding) / this.pixelRatio;
+
+        const x = actualPadding + (5 / this.pixelRatio); // Keep small offset from edge
+        let currentY = actualPadding + (10 / this.pixelRatio); // Keep small offset from top
+
+        this.context.font = `${actualFontSize}px ${fontFamily}`;
 
         let maxWidth = 0;
         for (const line of lines) {
             maxWidth = Math.max(maxWidth, this.context.measureText(line).width);
         }
-        const backgroundWidth = maxWidth + padding * 2;
-        const backgroundHeight = lines.length * lineHeight + padding * 1.5;
+        // backgroundWidth and backgroundHeight are in scaled pixels (already divided by pixelRatio implicitly through context measures)
+        const backgroundWidth = maxWidth + actualPadding * 2;
+        const backgroundHeight = lines.length * actualLineHeight + actualPadding * 1.5;
 
+        this.context.fillStyle = bgColor;
+        this.context.fillRect(x - actualPadding, currentY - actualPadding, backgroundWidth, backgroundHeight);
 
-        this.context.fillStyle = 'rgba(0,0,0,0.75)';
-        this.context.fillRect(x - padding, currentY - padding, backgroundWidth, backgroundHeight);
-
-        this.context.fillStyle = 'white';
+        this.context.fillStyle = fontColor;
         this.context.textAlign = 'left';
         this.context.textBaseline = 'top';
 
         for (const line of lines) {
             this.context.fillText(line, x, currentY);
-            currentY += lineHeight;
+            currentY += actualLineHeight;
         }
 
         this.context.restore();

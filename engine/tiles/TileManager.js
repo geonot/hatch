@@ -123,13 +123,18 @@ class TileManager {
                         anchorY: 0
                     });
                 } else {
-                    // This case might occur if loadAsset resolves with null for some reason (e.g. unsupported type, though 'image' is supported)
-                    console.warn(`TileManager.createTile: AssetManager returned no image for '${typeName}' from ${typeDef.spritePath}, using fallback color.`);
+                    this.engine.errorHandler.warn(
+                        `TileManager.createTile: AssetManager returned no image for tile type '${typeName}' (path: ${typeDef.spritePath}). Using fallback color.`,
+                        { context: 'TileManager.createTile.loadAssetNull', tileType: typeName, spritePath: typeDef.spritePath }
+                    );
                 }
             } catch (error) {
-                // Error already handled by AssetManager's errorHandler call.
-                // Log here indicates fallback to color due to loading failure.
-                console.warn(`TileManager.createTile: Failed to load sprite for tile type '${typeName}' from ${typeDef.spritePath}. Fallback to color. Error: ${error.message}`);
+                // AssetManager's loadAsset already calls errorHandler.critical for load failures.
+                // This warning is specifically about the TileManager's fallback behavior.
+                this.engine.errorHandler.warn(
+                    `TileManager.createTile: Failed to load sprite for tile type '${typeName}' (path: ${typeDef.spritePath}). Fallback to color. Original error: ${error.message}`,
+                    { context: 'TileManager.createTile.loadAssetError', tileType: typeName, spritePath: typeDef.spritePath, originalError: error }
+                );
             }
         }
 
@@ -170,13 +175,29 @@ class TileManager {
      */
     removeTile(gridX, gridY) {
         const tileKey = `${gridX},${gridY}`;
+        // It's better to get the tile from tilesMap directly if we are managing Tile instances there.
+        // getTileAt might return raw data if GridManager stores something other than Tile instances directly,
+        // or if TileManager doesn't populate GridManager with Tile instances (which it does).
         const tileToRemove = this.tilesMap.get(tileKey);
 
         if (tileToRemove) {
-            // If Tile had a destroy method for cleanup (e.g., releasing sprite asset if uniquely owned), call it.
-            // if (typeof tileToRemove.destroy === 'function') { tileToRemove.destroy(); }
-            this.gridManager.setTileData(gridX, gridY, null);
-            this.tilesMap.delete(tileKey);
+            if (typeof tileToRemove.destroy === 'function') {
+                try {
+                    tileToRemove.destroy();
+                } catch (e) {
+                    this.engine.errorHandler.error(`Error destroying tile at (${gridX},${gridY}): ${e.message}`, { context: 'TileManager.removeTile.destroyTile', gridX, gridY, originalError: e });
+                }
+            }
+            this.gridManager.setTileData(gridX, gridY, null); // Clear from GridManager
+            this.tilesMap.delete(tileKey); // Clear from TileManager's map
+            // console.log(`TileManager: Tile at (${gridX},${gridY}) removed and destroyed.`); // Optional log
+        } else {
+            // If tileToRemove is not in tilesMap, still ensure it's cleared from GridManager if it exists there.
+            // This handles cases where GridManager might have data not tracked by tilesMap (though ideally they are in sync).
+            if (this.gridManager.getTileData(gridX, gridY) !== null) {
+                 this.gridManager.setTileData(gridX, gridY, null);
+                 // console.warn(`TileManager.removeTile: Cleared untracked tile data from GridManager at (${gridX},${gridY}).`);
+            }
         }
     }
 
@@ -184,16 +205,22 @@ class TileManager {
      * Clears all tiles from the map, resetting `gridData` in `GridManager` and clearing `tilesMap`.
      */
     clearAllTiles() {
-        // Iterate over map dimensions to ensure all gridData entries are cleared
         for (let r = 0; r < this.gridManager.mapHeight; r++) {
             for (let c = 0; c < this.gridManager.mapWidth; c++) {
-                // We might want to call destroy on each tile if they hold significant resources
-                // const tile = this.getTileAt(c,r); if(tile && tile.destroy) tile.destroy();
+                const tile = this.getTileAt(c, r); // Assuming getTileAt retrieves the Tile instance
+                if (tile && typeof tile.destroy === 'function') {
+                    try {
+                        tile.destroy();
+                    } catch (e) {
+                        this.engine.errorHandler.error(`Error destroying tile at (${c},${r}): ${e.message}`, { context: 'TileManager.clearAllTiles.destroyTile', gridX: c, gridY: r, originalError: e });
+                    }
+                }
+                // Ensure GridManager is cleared regardless of tile.destroy success
                 this.gridManager.setTileData(c, r, null);
             }
         }
-        this.tilesMap.clear();
-        console.log("TileManager: All tiles cleared from GridManager and internal map.");
+        this.tilesMap.clear(); // Clear the TileManager's own map
+        console.log("TileManager: All tiles cleared from GridManager and internal map. Individual tile destroy methods called if present.");
     }
 
 

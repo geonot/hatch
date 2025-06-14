@@ -130,6 +130,20 @@ class Tile {
     // - `onPointerEnter()`, `onPointerExit()`, `onClick()` for interactions.
     // - `update(deltaTime)` if tiles have active behaviors.
     // - `toJSON()`, `fromJSON()` for serialization.
+
+    /**
+     * Cleans up the tile, primarily by nullifying references.
+     * If the tile's sprite had its own destroy method, it could be called here.
+     */
+    destroy() {
+        console.log(`Tile (${this.type} at ${this.gridX},${this.gridY}) destroyed.`);
+        if (this.sprite && typeof this.sprite.destroy === 'function') {
+            // Currently Sprite class does not have a destroy method, but this is for future-proofing.
+            // this.sprite.destroy();
+        }
+        this.sprite = null;
+        this.data = null; // Also nullify data as it might hold references
+    }
 }
 
 export default Tile;
