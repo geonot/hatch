@@ -1,8 +1,8 @@
 import { EventBus } from './EventBus.js';
 import { ErrorHandler } from './ErrorHandler.js';
 import AssetManager from '../assets/AssetManager.js';
-import InputManager from './InputManager.js';
-import RenderingEngine from './RenderingEngine.js';
+import InputManager from '../input/InputManager.js';
+import RenderingEngine from '../rendering/RenderingEngine.js'; // Corrected path
 import SceneManager from './SceneManager.js';
 import Scene from './Scene.js';
 
