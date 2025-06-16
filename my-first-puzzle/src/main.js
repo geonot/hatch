@@ -1,4 +1,4 @@
-import { HatchEngine } from '../../engine/core/HatchEngine.js'; // Adjusted path
+import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
 // AssetManager, InputManager, RenderingEngine, SceneManager are now auto-instantiated by HatchEngine.init()
 import TestScene from './scenes/TestScene.js';
 

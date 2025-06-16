@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Scene from './Scene.js'; // Default export
 // Removed: import { expect } from 'chai';
 // No sinon needed if we use jest.fn() for all spies/stubs checked by expect
