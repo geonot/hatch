@@ -2,13 +2,14 @@ import InputManager from './InputManager.js';
 import KeyboardInput from './KeyboardInput.js'; // Will be the mock constructor
 import MouseInput from './MouseInput.js';   // Will be the mock constructor
 import { expect } from 'chai';
+import { jest } from '@jest/globals';
 // No sinon needed for jest's own mocks, but can keep for other spies if necessary
 import sinon from 'sinon';
 
 
 // Mock the KeyboardInput and MouseInput modules
-jest.mock('./KeyboardInput.js');
-jest.mock('./MouseInput.js');
+jest.unstable_mockModule('./KeyboardInput.js', () => jest.fn());
+jest.unstable_mockModule('./MouseInput.js', () => jest.fn());
 
 describe('InputManager', () => {
   let inputManager;

@@ -1,7 +1,7 @@
-import { Scene } from 'hatch-engine/scenes/Scene.js'; // Adjust path if needed
+import { Scene } from 'hatch-engine/scenes/Scene.js';
 
 export default class TestScene extends Scene {
-    constructor(engine) { // Scene constructor expects engine
+    constructor(engine) {
         super(engine);
     }
 
@@ -14,7 +14,7 @@ export default class TestScene extends Scene {
         console.log('TestScene: init() called');
         // Example: if (this.assetManager.get('testImage')) {
         //     const sprite = new Sprite({ image: this.assetManager.get('testImage'), x: 100, y: 100 });
-        //     this.renderingEngine.add(sprite); // Add to rendering engine for visibility
+        //     this.renderingEngine.add(sprite);
         // }
     }
 
@@ -24,8 +24,6 @@ export default class TestScene extends Scene {
 
     render(renderingEngine) {
         // console.log('TestScene: render()');
-        // Objects added via this.renderingEngine.add() in init or update will be rendered.
-        // Or, dynamically add here:
         // renderingEngine.drawText('Hello from TestScene', 50, 50, '20px Arial', 'white');
     }
 
@@ -35,7 +33,6 @@ export default class TestScene extends Scene {
 
     destroy() {
         console.log('TestScene: destroy() called');
-        // Clean up scene-specific resources
-        // this.renderingEngine.clearDrawables(); // If objects were added directly to RE for this scene.
+        // this.renderingEngine.clearDrawables();
     }
 }

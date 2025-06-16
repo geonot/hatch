@@ -1,64 +1,12 @@
-#!/usr/bin/env node
-
-import fs from 'fs-extra'; // fs-extra should be imported at the top
+import { exec } from 'child_process';
+import fs from 'fs-extra';
 import path from 'path';
-import { createServer } from 'vite';
+import util from 'util';
 
-// For ES modules, __filename and __dirname are not available directly.
-// We can get __dirname from import.meta.url.
-// However, process.argv[1] can be unreliable if the script is symlinked or executed in unusual ways.
-// A more robust way for __dirname in ESM, assuming this file (`hatch.js`) is the entry point:
-import { fileURLToPath } from 'url';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const execPromise = util.promisify(exec);
 
-async function main() {
-  const { default: yargs } = await import('yargs/yargs');
-  const { hideBin } = await import('yargs/helpers');
-
-  yargs(hideBin(process.argv))
-    .command('new <project-name>', 'Create a new Hatch project', (yargs) => {
-      return yargs.positional('project-name', {
-        describe: 'Name of the project to create',
-        type: 'string'
-      });
-    }, async (argv) => {
-      const projectName = argv.projectName;
-      const projectPath = path.join(process.cwd(), projectName);
-
-      try {
-        await fs.ensureDir(projectPath);
-        await fs.ensureDir(path.join(projectPath, 'assets'));
-        await fs.ensureDir(path.join(projectPath, 'src'));
-        await fs.ensureDir(path.join(projectPath, 'src', 'scenes'));
-
-        const indexHtmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Hatch Game</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-        canvas { display: block; }
-    </style>
-</head>
-<body>
-    <canvas id="gameCanvas"></canvas>
-    <script type="module" src="src/main.js"></script>
-</body>
-</html>`;
-        await fs.writeFile(path.join(projectPath, 'index.html'), indexHtmlContent);
-
-        const hatchConfigContent = `projectName: ${projectName}
-canvasId: gameCanvas
-gameWidth: 800
-gameHeight: 600
-initialScene: TestScene
-assetManifest: assets/asset-manifest.json`;
-        await fs.writeFile(path.join(projectPath, 'hatch.config.yaml'), hatchConfigContent);
-
-        const mainJsContent = `import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
+// Define the expected content for main.js and TestScene.js
+const expectedMainJsContent = `import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
 // Core managers (AssetManager, InputManager, RenderingEngine, SceneManager)
 // are now automatically instantiated within engine.init().
 import TestScene from './scenes/TestScene.js'; // Default scene
@@ -124,10 +72,10 @@ async function gameMain() {
     }
 }
 
-gameMain();`;
-        await fs.writeFile(path.join(projectPath, 'src', 'main.js'), mainJsContent);
+gameMain();
+`;
 
-        const testSceneJsContent = `import { Scene } from 'hatch-engine/scenes/Scene.js';
+const expectedTestSceneJsContent = `import { Scene } from 'hatch-engine/scenes/Scene.js';
 
 export default class TestScene extends Scene {
     constructor(engine) { // Scene constructor expects engine instance
@@ -188,89 +136,62 @@ export default class TestScene extends Scene {
         // this.renderingEngine.clearDrawables(); // Or selectively remove entities.
         // this.eventBus.offAllForContext(this); // If any event listeners were set up with this scene as context.
     }
-}`;
-        await fs.writeFile(path.join(projectPath, 'src', 'scenes', 'TestScene.js'), testSceneJsContent);
-
-        const assetManifestContent = `{
-    "assets": []
-}`;
-        await fs.writeFile(path.join(projectPath, 'assets', 'asset-manifest.json'), assetManifestContent);
-
-        console.log(`Project ${projectName} created successfully at ${projectPath}`);
-
-      } catch (error) {
-        console.error(`Error creating project ${projectName}:`, error);
-        process.exit(1);
-      }
-    })
-    .command('dev', 'Start the development server', (yargs) => {
-      return yargs.option('port', {
-        alias: 'p',
-        type: 'number',
-        description: 'Port to run the server on',
-        default: 3000
-      });
-    }, async (argv) => {
-      const projectRoot = process.cwd();
-      console.log(`Starting dev server for project at: ${projectRoot} on port ${argv.port}`);
-
-      try {
-        const server = await createServer({
-          root: projectRoot,
-          publicDir: 'assets', // Relative to projectRoot. Vite will serve files from <projectRoot>/assets at /assets
-          server: {
-            port: argv.port,
-            open: true, // Automatically open in browser
-          },
-          resolve: {
-            alias: {
-              // This allows imports like `import { HatchEngine } from 'hatch-engine/core/HatchEngine.js'`
-              'hatch-engine': path.resolve(__dirname, '../engine')
-            }
-          },
-          // optimizeDeps: { // Not typically needed for pure JS libraries referenced via alias
-          //   include: ['hatch-engine/**/*.js'],
-          // },
-          // fs: { // Usually not needed if alias points within a reasonable project structure or monorepo
-          //   allow: [
-          //     path.resolve(__dirname, '../engine'), // engine source
-          //     projectRoot, // user's project
-          //     // searchForWorkspaceRoot(process.cwd()), // For monorepo setups
-          //   ],
-          // },
-        });
-        await server.listen();
-        server.printUrls();
-        console.log(`Development server running. Press Ctrl+C to stop.`);
-
-        // Keep process alive until server is stopped
-        process.on('SIGINT', async () => {
-            await server.close();
-            process.exit(0);
-        });
-        process.on('SIGTERM', async () => {
-            await server.close();
-            process.exit(0);
-        });
-
-      } catch (e) {
-        console.error('Failed to start dev server:', e);
-        process.exit(1);
-      }
-    })
-    .demandCommand(1, 'You need at least one command before moving on')
-    .help()
-    .alias('h', 'help')
-    .version() // This will attempt to load version from package.json
-    .alias('v', 'version')
-    .strict() // Enforce strict command parsing
-    .parse(); // Use parse() instead of relying on implicit parsing by .argv
 }
+`;
 
-// Ensure fs-extra is available at the top level for yargs to use it if needed internally,
-// and for our script.
-// The dynamic import for yargs is specific to how yargs v17+ handles its CJS/ESM dual packaging.
-main().catch(err => {
-  console.error("Unhandled error in CLI:", err);
-  process.exit(1);
+describe('Hatch CLI', () => {
+    const testProjectName = 'test-cli-project';
+    const testProjectPath = path.join(process.cwd(), testProjectName);
+    // Adjust path to hatch.js if tests are not run from the root directory
+    const hatchCliCommand = `node ${path.join(__dirname, '..', 'bin', 'hatch.js')}`;
+
+    beforeAll(async () => {
+        // Ensure no old test project directory exists
+        if (await fs.exists(testProjectPath)) {
+            await fs.remove(testProjectPath);
+        }
+    });
+
+    afterAll(async () => {
+        // Clean up the test project directory
+        if (await fs.exists(testProjectPath)) {
+            await fs.remove(testProjectPath);
+        }
+    });
+
+    test('new command should create a project with correct template files', async () => {
+        try {
+            // Execute the CLI new command
+            const { stdout, stderr } = await execPromise(`\${hatchCliCommand} new \${testProjectName}`);
+            // console.log('CLI stdout:', stdout);
+            // if (stderr) console.error('CLI stderr:', stderr);
+
+            // Check if project directory was created
+            expect(await fs.exists(testProjectPath)).toBe(true);
+
+            // Check main.js content
+            const mainJsPath = path.join(testProjectPath, 'src', 'main.js');
+            expect(await fs.exists(mainJsPath)).toBe(true);
+            const mainJsContent = await fs.readFile(mainJsPath, 'utf-8');
+            // Normalize line endings for comparison
+            expect(mainJsContent.replace(/\r\n/g, '\n')).toBe(expectedMainJsContent.replace(/\r\n/g, '\n'));
+
+            // Check TestScene.js content
+            const testSceneJsPath = path.join(testProjectPath, 'src', 'scenes', 'TestScene.js');
+            expect(await fs.exists(testSceneJsPath)).toBe(true);
+            const testSceneJsContent = await fs.readFile(testSceneJsPath, 'utf-8');
+            // Normalize line endings for comparison
+            expect(testSceneJsContent.replace(/\r\n/g, '\n')).toBe(expectedTestSceneJsContent.replace(/\r\n/g, '\n'));
+
+            // Check for other expected files
+            expect(await fs.exists(path.join(testProjectPath, 'index.html'))).toBe(true);
+            expect(await fs.exists(path.join(testProjectPath, 'hatch.config.yaml'))).toBe(true);
+            expect(await fs.exists(path.join(testProjectPath, 'assets', 'asset-manifest.json'))).toBe(true);
+
+        } catch (error) {
+            // Log error for debugging in case of test failure
+            console.error('Test execution error:', error);
+            throw error; // Re-throw to fail the test
+        }
+    }, 30000); // Increase timeout for CLI execution and file operations
 });

@@ -3,7 +3,7 @@
  * @description A sample scene for testing basic functionality.
  */
 
-import Scene from '../../../engine/scenes/Scene.js';
+import { Scene } from 'hatch-engine/scenes/Scene.js';
 import Sprite from '../../../engine/rendering/Sprite.js';
 import GridManager from '../../../engine/grid/GridManager.js';
 import TileManager from '../../../engine/tiles/TileManager.js'; // Import TileManager

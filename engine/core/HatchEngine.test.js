@@ -9,37 +9,49 @@
 
 // import { expect } from 'chai';
 // import sinon from 'sinon';
+import { jest } from '@jest/globals';
 
 // Mock external modules using Jest's mocking syntax
-// Hoist the problematic mock to the very top.
-jest.mock('./SceneManager.js', () => {
-  return jest.fn().mockImplementation(() => {
-    return {
-      loadScene: jest.fn(),
-      update: jest.fn(),
-      render: jest.fn(),
-    };
-  });
+jest.unstable_mockModule('../scenes/SceneManager.js', () => {
+  return jest.fn().mockImplementation(() => ({
+    loadScene: jest.fn(),
+    update: jest.fn(),
+    render: jest.fn(),
+  }));
 });
+jest.unstable_mockModule('./EventBus.js', () => {
+  return jest.fn().mockImplementation(() => ({
+    emit: jest.fn(),
+    on: jest.fn(),
+    off: jest.fn()
+  }));
+});
+jest.unstable_mockModule('./ErrorHandler.js', () => {
+  return jest.fn().mockImplementation(() => ({
+    critical: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn()
+  }));
+});
+jest.unstable_mockModule('../assets/AssetManager.js', () => jest.fn());
+jest.unstable_mockModule('../input/InputManager.js', () => jest.fn());
+jest.unstable_mockModule('../rendering/RenderingEngine.js', () => jest.fn());
+jest.unstable_mockModule('../scenes/Scene.js', () => jest.fn());
+
 
 import { HatchEngine } from './HatchEngine.js';
-// import { EventBus } from './EventBus.js';
-// import { ErrorHandler } from './ErrorHandler.js';
-// import AssetManager from '../assets/AssetManager.js';
-// import InputManager from '../input/InputManager.js';
-// import RenderingEngine from '../rendering/RenderingEngine.js';
-import SceneManager from './SceneManager.js'; // Still need to import to reference the mock
-// import Scene from './Scene.js';
+import EventBus from './EventBus.js';
+import ErrorHandler from './ErrorHandler.js';
+import AssetManager from '../assets/AssetManager.js';
+import InputManager from '../input/InputManager.js';
+import RenderingEngine from '../rendering/RenderingEngine.js';
+import SceneManager from '../scenes/SceneManager.js'; // Corrected path
+import Scene from '../scenes/Scene.js';
 import { ErrorLevels } from './Constants.js'; // Import ErrorLevels
 
-// Mock core engine modules
-// jest.mock('./EventBus.js');
-// jest.mock('./ErrorHandler.js');
-// jest.mock('../assets/AssetManager.js');
-// jest.mock('../input/InputManager.js');
-// jest.mock('../rendering/RenderingEngine.js');
-// The SceneManager mock is now at the top.
-// jest.mock('./Scene.js');
+// Mock core engine modules - Handled by jest.unstable_mockModule above
 
 
 describe('HatchEngine', () => {
@@ -137,18 +149,14 @@ describe('HatchEngine', () => {
     // For now, we'll rely on fetch providing valid YAML text and js-yaml parsing it.
 
     // Provide default mock implementations for constructors that might be new-ed up
-    EventBus.mockImplementation(() => ({ emit: jest.fn(), on: jest.fn(), off: jest.fn() }));
-    ErrorHandler.mockImplementation(() => ({ critical: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
-    AssetManager.mockImplementation(() => ({ loadManifest: jest.fn() }));
-    InputManager.mockImplementation(() => ({ setup: jest.fn(), destroy: jest.fn() }));
-    RenderingEngine.mockImplementation(() => ({ clear: jest.fn(), renderManagedDrawables: jest.fn(), camera: { applyTransform: jest.fn() } }));
-    // EventBus.mockImplementation(() => ({ emit: jest.fn(), on: jest.fn(), off: jest.fn() }));
-    // ErrorHandler.mockImplementation(() => ({ critical: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
-    // AssetManager.mockImplementation(() => ({ loadManifest: jest.fn() }));
-    // InputManager.mockImplementation(() => ({ setup: jest.fn(), destroy: jest.fn() }));
-    // RenderingEngine.mockImplementation(() => ({ clear: jest.fn(), renderManagedDrawables: jest.fn(), camera: { applyTransform: jest.fn() } }));
+    // These are now class mocks, so we access .mockImplementation on the imported mock itself.
+    if (EventBus.mockImplementation) EventBus.mockImplementation(() => ({ emit: jest.fn(), on: jest.fn(), off: jest.fn() }));
+    if (ErrorHandler.mockImplementation) ErrorHandler.mockImplementation(() => ({ critical: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
+    if (AssetManager.mockImplementation) AssetManager.mockImplementation(() => ({ loadManifest: jest.fn() }));
+    if (InputManager.mockImplementation) InputManager.mockImplementation(() => ({ setup: jest.fn(), destroy: jest.fn() }));
+    if (RenderingEngine.mockImplementation) RenderingEngine.mockImplementation(() => ({ clear: jest.fn(), renderManagedDrawables: jest.fn(), camera: { applyTransform: jest.fn() } }));
     // SceneManager is mocked at the top.
-    // Scene.mockImplementation(() => ({ load: jest.fn(), init: jest.fn(), update: jest.fn(), render: jest.fn(), destroy: jest.fn() }));
+    if (Scene.mockImplementation) Scene.mockImplementation(() => ({ load: jest.fn(), init: jest.fn(), update: jest.fn(), render: jest.fn(), destroy: jest.fn() }));
   });
 
   afterEach(() => {
@@ -164,15 +172,9 @@ describe('HatchEngine', () => {
 
   describe('constructor', () => {
     it('should create an instance of HatchEngine with given configuration', () => {
-      // For this most basic test, ensure EventBus and ErrorHandler are mocked if HatchEngine constructor news them up.
-      // If HatchEngine NEWS these up, then the mocks defined at the top level need to provide mock constructors.
-      jest.mock('./EventBus.js', () => jest.fn().mockImplementation(() => ({ emit: jest.fn() })));
-      jest.mock('./ErrorHandler.js', () => jest.fn().mockImplementation(() => ({})));
-
+      // The mocks are now at the top level, so this test should just work.
       engine = new HatchEngine(projectConfig);
       expect(engine).toBeInstanceOf(HatchEngine);
-      // We are not testing SceneManager instantiation here, only that HatchEngine can be constructed
-      // when SceneManager is (presumably problematic) mocked.
     });
 
     // Commenting out other constructor tests for now to isolate the module resolution
