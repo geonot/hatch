@@ -33,6 +33,7 @@
  *                              Default is 0.5.
  * @property {number} anchorY - The normalized vertical anchor point (0-1). 0 is top, 0.5 is center, 1 is bottom.
  *                              Default is 0.5.
+ * @property {number} zIndex - The rendering order of the sprite. Higher values are drawn on top. Default is 0.
  */
 class Sprite {
     /**
@@ -54,6 +55,7 @@ class Sprite {
      * @param {boolean} [options.visible=true] - Whether the sprite is initially visible and should be rendered.
      * @param {number} [options.anchorX=0.5] - The normalized horizontal anchor point (0-1, where 0 is left, 0.5 is center).
      * @param {number} [options.anchorY=0.5] - The normalized vertical anchor point (0-1, where 0 is top, 0.5 is center).
+ * @param {number} [options.zIndex=0] - The z-index for rendering order.
      * @throws {Error} If `options.image` is not a valid HTMLImageElement.
      */
     constructor({
@@ -65,7 +67,8 @@ class Sprite {
         rotation = 0, // Radians
         alpha = 1,
         visible = true,
-        anchorX = 0.5, anchorY = 0.5
+        anchorX = 0.5, anchorY = 0.5,
+        zIndex = 0
     }) {
         if (!image || !(image instanceof HTMLImageElement)) {
             // This error is critical for the sprite's functionality.
@@ -102,14 +105,15 @@ class Sprite {
 
         this.anchorX = (typeof anchorX === 'number') ? Math.max(0, Math.min(1, anchorX)) : 0.5;
         this.anchorY = (typeof anchorY === 'number') ? Math.max(0, Math.min(1, anchorY)) : 0.5;
+        this.zIndex = (typeof zIndex === 'number') ? zIndex : 0;
 
         if (typeof x !== 'number' || typeof y !== 'number' ||
             (width !== undefined && typeof width !== 'number') || (height !== undefined && typeof height !== 'number') ||
             typeof sourceX !== 'number' || typeof sourceY !== 'number' ||
             (sourceWidth !== undefined && typeof sourceWidth !== 'number') || (sourceHeight !== undefined && typeof sourceHeight !== 'number') ||
             typeof rotation !== 'number' || typeof alpha !== 'number' || typeof visible !== 'boolean' ||
-            typeof anchorX !== 'number' || typeof anchorY !== 'number') {
-            console.warn("Sprite constructor: One or more optional parameters had an invalid type and were set to defaults. Check inputs.", { imageSrc: image.src, x, y, width, height, sourceX, sourceY, sourceWidth, sourceHeight, rotation, alpha, visible, anchorX, anchorY });
+            typeof anchorX !== 'number' || typeof anchorY !== 'number' || typeof zIndex !== 'number') {
+            console.warn("Sprite constructor: One or more optional parameters had an invalid type and were set to defaults. Check inputs.", { imageSrc: image.src, x, y, width, height, sourceX, sourceY, sourceWidth, sourceHeight, rotation, alpha, visible, anchorX, anchorY, zIndex });
         }
     }
 

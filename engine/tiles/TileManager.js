@@ -18,7 +18,7 @@ import Sprite from '../rendering/Sprite.js';
  * @property {import('../assets/AssetManager.js').default} assetManager - Used for loading tile sprites.
  * @property {import('../rendering/RenderingEngine.js').default} renderingEngine - Used to add tiles to the render queue.
  * @property {Map<string, Object>} tileTypes - Stores definitions for tile types, keyed by type name.
- *           Each definition includes `spritePath`, `color`, and `properties`.
+ *           Each definition includes `spritePath`, `color`, `properties`, and `zIndex`.
  * @property {Map<string, Tile>} tilesMap - Stores active `Tile` instances, keyed by a string "x,y" of their grid coordinates.
  */
 class TileManager {
@@ -63,6 +63,7 @@ class TileManager {
      *                                                 If null, `color` will be used. Path is relative to where game is served from.
      * @param {string} [definition.color='gray'] - Fallback CSS color string to use if `spritePath` is null or sprite fails to load.
      * @param {Object} [definition.properties={}] - Custom properties associated with this tile type (e.g., `{ solid: true, movementCost: 2 }`).
+ * @param {number} [definition.zIndex=0] - Default zIndex for tiles of this type.
      */
     defineTileType(name, definition) {
         if (typeof name !== 'string' || name.trim() === '') {
@@ -74,27 +75,22 @@ class TileManager {
             return;
         }
 
-        const { spritePath = null, color = 'gray', properties = {} } = definition;
+        const { spritePath = null, color = 'gray', properties = {}, zIndex = 0 } = definition;
 
-        if (spritePath !== null && typeof spritePath !== 'string') {
-            this.engine.errorHandler.warn(`TileManager.defineTileType: 'spritePath' for tile type '${name}' must be a string or null. Using null.`, { component: 'TileManager', method: 'defineTileType', params: { name, spritePath } });
-            definition.spritePath = null; // Correct the value to be stored
-        }
-        if (typeof color !== 'string') {
-            this.engine.errorHandler.warn(`TileManager.defineTileType: 'color' for tile type '${name}' must be a string. Using 'gray'.`, { component: 'TileManager', method: 'defineTileType', params: { name, color } });
-            definition.color = 'gray';
-        }
-        if (typeof properties !== 'object' || properties === null) {
-            this.engine.errorHandler.warn(`TileManager.defineTileType: 'properties' for tile type '${name}' must be an object. Using {}.`, { component: 'TileManager', method: 'defineTileType', params: { name, properties } });
-            definition.properties = {};
-        }
+        const validatedDefinition = {
+            spritePath: (spritePath !== null && typeof spritePath !== 'string') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'spritePath' for tile type '${name}' must be a string or null. Using null.`, { component: 'TileManager', method: 'defineTileType', params: { name, spritePath } }), null) : spritePath,
+            color: (typeof color !== 'string') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'color' for tile type '${name}' must be a string. Using 'gray'.`, { component: 'TileManager', method: 'defineTileType', params: { name, color } }), 'gray') : color,
+            properties: (typeof properties !== 'object' || properties === null) ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'properties' for tile type '${name}' must be an object. Using {}.`, { component: 'TileManager', method: 'defineTileType', params: { name, properties } }), {}) : properties,
+            zIndex: (typeof zIndex !== 'number') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'zIndex' for tile type '${name}' must be a number. Using 0.`, { component: 'TileManager', method: 'defineTileType', params: { name, zIndex } }), 0) : zIndex,
+        };
+
 
         if (this.tileTypes.has(name)) {
             this.engine.errorHandler.warn(`Tile type '${name}' is being redefined.`, { component: 'TileManager', method: 'defineTileType', params: { name }});
         }
-        // Use the validated/defaulted values from the destructured definition
-        this.tileTypes.set(name, { spritePath: definition.spritePath !== undefined ? definition.spritePath : spritePath, color: definition.color !== undefined ? definition.color : color, properties: definition.properties !== undefined ? definition.properties : properties });
-        this.engine.errorHandler.info(`Tile type '${name}' defined. Sprite: ${this.tileTypes.get(name).spritePath || 'N/A'}, Color: ${this.tileTypes.get(name).color}, Properties: ${JSON.stringify(this.tileTypes.get(name).properties)}`, { component: 'TileManager', method: 'defineTileType', params: { name, definition: this.tileTypes.get(name) }});
+
+        this.tileTypes.set(name, validatedDefinition);
+        this.engine.errorHandler.info(`Tile type '${name}' defined. Sprite: ${validatedDefinition.spritePath || 'N/A'}, Color: ${validatedDefinition.color}, zIndex: ${validatedDefinition.zIndex}, Properties: ${JSON.stringify(validatedDefinition.properties)}`, { component: 'TileManager', method: 'defineTileType', params: { name, definition: validatedDefinition }});
     }
 
     /**
@@ -105,14 +101,16 @@ class TileManager {
      * @param {string} typeName - The name of the tile type (must be pre-defined using `defineTileType`).
      * @param {number} gridX - The grid x-coordinate (column) for the new tile.
      * @param {number} gridY - The grid y-coordinate (row) for the new tile.
+     * @param {object} [options={}] - Optional parameters for creating the tile.
+     * @param {number} [options.zIndex] - Specific zIndex for this tile instance, overrides type default.
      * @returns {Promise<Tile|null>} A promise that resolves with the created `Tile` instance,
      *                               or `null` if the position is invalid or the type is not defined.
      *                               The promise handles asynchronous sprite loading.
      * @async
      */
-    async createTile(typeName, gridX, gridY) {
+    async createTile(typeName, gridX, gridY, options = {}) {
         if (typeof typeName !== 'string' || typeName.trim() === '') {
-            this.engine.errorHandler.error("TileManager.createTile: 'typeName' must be a non-empty string.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY } });
+            this.engine.errorHandler.error("TileManager.createTile: 'typeName' must be a non-empty string.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY, options } });
             return null;
         }
         if (typeof gridX !== 'number' || typeof gridY !== 'number') {
@@ -121,7 +119,7 @@ class TileManager {
         }
 
         if (!this.gridManager.isValidGridPosition(gridX, gridY)) {
-            this.engine.errorHandler.warn(`Attempted to create tile at invalid grid position (${gridX}, ${gridY}).`, { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY }});
+            this.engine.errorHandler.warn(`Attempted to create tile at invalid grid position (${gridX}, ${gridY}).`, { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY, options }});
             return null;
         }
 
@@ -131,14 +129,16 @@ class TileManager {
             this.engine.errorHandler.warn(errorMessage, {
                 component: 'TileManager',
                 method: 'createTile',
-                params: { typeName, gridX, gridY },
-                message: errorMessage // Including original message for clarity in errorObject as well
+                params: { typeName, gridX, gridY, options },
+                message: errorMessage
             });
             return null;
         }
 
         const worldPos = this.gridManager.gridToWorld(gridX, gridY); // Top-left world position
         let tileSprite = null;
+        const zIndex = (options && typeof options.zIndex === 'number') ? options.zIndex : typeDef.zIndex;
+
 
         if (typeDef.spritePath) {
             // AssetManager handles caching, so use a consistent name for the asset.
@@ -153,11 +153,13 @@ class TileManager {
                 if (image) {
                     tileSprite = new Sprite({
                         image: image,
-                        x: 0, y: 0, // Sprite's position is set by Tile.render relative to Tile's worldX/Y
+                        x: 0, y: 0,
                         width: this.gridManager.tileWidth,
                         height: this.gridManager.tileHeight,
-                        anchorX: 0, // Tiles are drawn from their top-left corner
-                        anchorY: 0
+                        anchorX: 0,
+                        anchorY: 0,
+                        // Sprite's zIndex can be independent or linked. For now, let tile's zIndex govern.
+                        // zIndex: zIndex // If sprite needs its own zIndex matching the tile's.
                     });
                 } else {
                     this.engine.errorHandler.warn(
@@ -180,10 +182,11 @@ class TileManager {
             gridX, gridY,
             worldX: worldPos.x, worldY: worldPos.y,
             width: this.gridManager.tileWidth, height: this.gridManager.tileHeight,
-            data: { ...typeDef.properties }, // Clone properties
+            data: { ...typeDef.properties },
             sprite: tileSprite,
-            color: tileSprite ? null : typeDef.color, // Use fallback color if no sprite or sprite failed to load
-            visible: true
+            color: tileSprite ? null : typeDef.color,
+            visible: true,
+            zIndex: zIndex // Pass the determined zIndex to the Tile constructor
         });
 
         this.gridManager.setTileData(gridX, gridY, newTile);

@@ -190,8 +190,8 @@ class RenderingEngine {
      */
     renderManagedDrawables() {
         let objectsRenderedThisFrame = 0;
-        // Optional: Sort drawables by a zIndex property for layering
-        // this.drawables.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+        // Sort drawables by zIndex for layering. Lower zIndex is drawn first (further back).
+        this.drawables.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
         for (const drawable of this.drawables) {
             if (drawable && typeof drawable.render === 'function' && (drawable.visible === undefined || drawable.visible === true)) {

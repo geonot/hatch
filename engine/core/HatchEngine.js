@@ -13,6 +13,7 @@ import InputManager from '../input/InputManager.js';
 import RenderingEngine from '../rendering/RenderingEngine.js'; // Corrected path
 import SceneManager from './SceneManager.js';
 import Scene from './Scene.js';
+import AudioManager from '../audio/AudioManager.js';
 
 /**
  * @class HatchEngine
@@ -34,11 +35,13 @@ import Scene from './Scene.js';
  * @property {InputManager} inputManager - Manages user input from keyboard and mouse.
  * @property {RenderingEngine} renderingEngine - Manages all rendering operations.
  * @property {SceneManager} sceneManager - Manages game scenes and transitions.
+ * @property {AudioManager} audioManager - Manages audio playback.
  * @property {typeof Scene} Scene - A reference to the base Scene class, for convenience.
  * @property {Function} AssetManagerClass - The class to use for AssetManager (for DI).
  * @property {Function} InputManagerClass - The class to use for InputManager (for DI).
  * @property {Function} RenderingEngineClass - The class to use for RenderingEngine (for DI).
  * @property {Function} SceneManagerClass - The class to use for SceneManager (for DI).
+ * @property {Function} AudioManagerClass - The class to use for AudioManager (for DI).
  * @property {Function} SceneClass - The class to use as the base Scene (for DI).
  */
 export class HatchEngine {
@@ -206,6 +209,8 @@ export class HatchEngine {
         /** @type {Function} */
         this.SceneManagerClass = this.hatchConfig.SceneManagerClass || SceneManager;
         /** @type {Function} */
+        this.AudioManagerClass = this.hatchConfig.AudioManagerClass || AudioManager;
+        /** @type {Function} */
         this.SceneClass = this.hatchConfig.SceneClass || Scene;
 
         /** @type {EventBus} */
@@ -272,6 +277,7 @@ export class HatchEngine {
             const rendererOptions = this.hatchConfig.renderer || {};
             this.renderingEngine = new this.RenderingEngineClass(this.canvas, this, rendererOptions);
             this.sceneManager = new this.SceneManagerClass(this);
+            this.audioManager = new this.AudioManagerClass(this);
 
             // Make base Scene class available on the engine
             /** @type {typeof Scene} */

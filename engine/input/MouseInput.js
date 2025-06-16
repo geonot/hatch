@@ -3,7 +3,7 @@
  * @description Handles mouse input events for a specified HTML element (typically the game canvas).
  * It tracks mouse position (scaled to logical canvas coordinates), button states (pressed,
  * just pressed, just released), and mouse wheel scroll deltas.
- */
+import { InputEvents } from '../core/Constants.js'; // Import new events
 
 /**
  * @class MouseInput
@@ -126,10 +126,14 @@ class MouseInput {
 
         this.x = (event.clientX - rect.left) * scaleX;
         this.y = (event.clientY - rect.top) * scaleY;
+
+        // Emit grid mouse move event
+        this._emitGridMouseEvent(InputEvents.GRID_MOUSEMOVE, event);
     }
 
     /**
      * Handles the `mousedown` event. Updates `pressedButtons` and `justPressedButtons`.
+     * Emits `grid:mousedown` if applicable.
      * @param {MouseEvent} event - The DOM MouseEvent object.
      * @private
      */
@@ -139,17 +143,128 @@ class MouseInput {
             this.justPressedButtons.add(buttonCode);
         }
         this.pressedButtons.add(buttonCode);
+
+        // Emit grid mouse down event
+        this._emitGridMouseEvent(InputEvents.GRID_MOUSEDOWN, event, buttonCode);
     }
 
     /**
      * Handles the `mouseup` event. Updates `pressedButtons` and `justReleasedButtons`.
+     * Emits `grid:mouseup` if applicable.
      * @param {MouseEvent} event - The DOM MouseEvent object.
      * @private
      */
-    _onMouseUp(event) { // Corrected method name from _onKeyUp to _onMouseUp
+    _onMouseUp(event) {
         const buttonCode = event.button;
         this.pressedButtons.delete(buttonCode);
         this.justReleasedButtons.add(buttonCode);
+
+        // Emit grid mouse up event
+        this._emitGridMouseEvent(InputEvents.GRID_MOUSEUP, event, buttonCode);
+    }
+
+    /**
+     * Helper method to get current mouse world coordinates.
+     * Assumes `this.x` and `this.y` are logical canvas coordinates.
+     * @returns {{worldX: number, worldY: number} | null} The world coordinates or null if camera is not available.
+     * @private
+     */
+    _getMouseWorldPosition() {
+        if (this.engine && this.engine.renderingEngine && this.engine.renderingEngine.mainCamera &&
+            typeof this.engine.renderingEngine.mainCamera.screenToWorld === 'function') {
+            // Pass the logical canvas coordinates (this.x, this.y) to screenToWorld
+            return this.engine.renderingEngine.mainCamera.screenToWorld(this.x, this.y);
+        }
+        // Optionally log a warning if camera is unavailable, though frequent logs might be noisy.
+        // Consider if this case should be handled by engine's error handler with a specific level.
+        // console.warn('MouseInput: Main camera or screenToWorld method not available for coordinate conversion.');
+        return null;
+    }
+
+    /**
+     * Gets the mouse position in grid coordinates by converting current logical mouse position
+     * to world coordinates, then to grid coordinates.
+     * @returns {{x: number, y: number} | null} Grid coordinates {x, y} or null if conversion is not possible
+     * (e.g., no camera, no gridManager, or error during conversion).
+     */
+    getMouseGridPosition() {
+        const worldPos = this._getMouseWorldPosition();
+        if (!worldPos) {
+            // If world position couldn't be determined (e.g., no camera), cannot proceed.
+            return null;
+        }
+
+        if (this.engine && this.engine.gridManager && typeof this.engine.gridManager.worldToGrid === 'function') {
+            try {
+                // Pass the obtained world coordinates to worldToGrid
+                return this.engine.gridManager.worldToGrid(worldPos.worldX, worldPos.worldY);
+            } catch (e) {
+                // Log error if conversion itself fails
+                if (this.engine.errorHandler) {
+                    this.engine.errorHandler.error('MouseInput: Error converting world to grid coordinates.', { component: 'MouseInput', method: 'getMouseGridPosition', originalError: e });
+                } else {
+                    console.error('MouseInput: Error converting world to grid coordinates.', e);
+                }
+                return null;
+            }
+        } else {
+            // GridManager or its worldToGrid method is not available.
+            // This might be a normal state if GridManager is optional or not yet initialized.
+            // console.debug('MouseInput: GridManager not available for worldToGrid conversion.');
+            return null;
+        }
+    }
+
+    /**
+     * Helper to emit grid-related mouse events.
+     * This method fetches world and grid positions and emits an event if both are valid.
+     * @param {string} eventName - The name of the event to emit (e.g., InputEvents.GRID_MOUSEDOWN).
+     * @param {MouseEvent} rawEvent - The original DOM mouse event.
+     * @param {number} [button] - The mouse button code (for mousedown/mouseup events).
+     * @private
+     */
+    _emitGridMouseEvent(eventName, rawEvent, button) {
+        if (!this.engine || !this.engine.eventBus || !this.engine.eventBus.emit) {
+            // Event bus is not available, cannot emit.
+            // This might be a setup issue or called too early/late in lifecycle.
+            // console.warn('MouseInput: Event bus not available for emitting grid mouse event.');
+            return;
+        }
+
+        // Note: getMouseGridPosition internally calls _getMouseWorldPosition.
+        // So, we get both grid and potentially world coordinates from its logic.
+        const gridPos = this.getMouseGridPosition();
+        if (!gridPos) {
+            // Not over a valid grid cell, or grid/world coordinates couldn't be determined.
+            return;
+        }
+
+        // To include worldPos in the payload, we need to call _getMouseWorldPosition again.
+        // This is slightly redundant but ensures payload consistency if getMouseGridPosition changes.
+        // Alternatively, getMouseGridPosition could return an object containing both.
+        const worldPos = this._getMouseWorldPosition(); // Call it again to get worldPos for the payload
+        if (!worldPos) {
+             // This should ideally not happen if gridPos was successfully obtained,
+             // as getMouseGridPosition depends on _getMouseWorldPosition.
+             // However, as a safeguard:
+             // console.warn("MouseInput: World position became null after grid position was determined. Aborting event emit.");
+             return;
+        }
+
+
+        const eventPayload = {
+            gridX: gridPos.x,
+            gridY: gridPos.y,
+            worldX: worldPos.worldX,
+            worldY: worldPos.worldY,
+            rawEvent: rawEvent, // The original DOM event
+        };
+
+        if (button !== undefined) {
+            eventPayload.button = button;
+        }
+
+        this.engine.eventBus.emit(eventName, eventPayload);
     }
 
     /**

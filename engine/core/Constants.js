@@ -28,6 +28,32 @@ export const EngineEvents = {
 };
 
 /**
+ * @description Defines event names related to input handling.
+ * @property {string} KEY_DOWN - Emitted when a key is pressed. (Example, actual events might be more specific)
+ * @property {string} KEY_UP - Emitted when a key is released. (Example)
+ * @property {string} MOUSE_DOWN - Emitted on mouse button press. (Example)
+ * @property {string} MOUSE_UP - Emitted on mouse button release. (Example)
+ * @property {string} MOUSE_MOVE - Emitted on mouse movement. (Example)
+ * @property {string} GRID_MOUSEDOWN - Emitted on mouse button press over a grid cell.
+ * @property {string} GRID_MOUSEUP - Emitted on mouse button release over a grid cell.
+ * @property {string} GRID_MOUSEMOVE - Emitted on mouse movement over a grid cell.
+ */
+// Note: Actual direct event emission from InputManager/MouseInput/KeyboardInput to the event bus
+// for basic key/mouse events is not standard in this engine version. Components typically query state.
+// However, for new grid-specific events, direct emission is requested.
+export const InputEvents = {
+    // Placeholder for potential future basic input events
+    // KEY_DOWN: 'input:keydown',
+    // KEY_UP: 'input:keyup',
+    // MOUSE_DOWN: 'input:mousedown',
+    // MOUSE_UP: 'input:mouseup',
+    // MOUSE_MOVE: 'input:mousemove',
+    GRID_MOUSEDOWN: 'input:grid:mousedown',
+    GRID_MOUSEUP: 'input:grid:mouseup',
+    GRID_MOUSEMOVE: 'input:grid:mousemove',
+};
+
+/**
  * @description Defines event names related to error handling.
  * @property {string} LOGGED - Emitted by ErrorHandler when an error/message is logged.
  */
