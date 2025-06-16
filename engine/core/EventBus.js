@@ -20,7 +20,6 @@ export class EventBus {
     constructor() {
         /** @type {Object<string, Array<Function>>} */
         this.listeners = {};
-        // console.log('[EventBus] Initialized');
     }
 
     /**
@@ -30,6 +29,10 @@ export class EventBus {
      *                              This function will receive any arguments passed to `emit`.
      */
     on(eventName, callback) {
+        if (typeof eventName !== 'string' || eventName.trim() === '') {
+            console.warn(`[EventBus] Attempted to register listener with invalid eventName (must be non-empty string). Received: ${eventName}`);
+            return;
+        }
         if (typeof callback !== 'function') {
             // This console.warn is acceptable as it's a developer error for this specific utility.
             console.warn(`[EventBus] Attempted to register non-function callback for event: ${eventName}`);
@@ -39,7 +42,6 @@ export class EventBus {
             this.listeners[eventName] = [];
         }
         this.listeners[eventName].push(callback);
-        // console.log(`[EventBus] Listener added for: ${eventName}`);
     }
 
     /**
@@ -49,15 +51,23 @@ export class EventBus {
      *                                      Must be the same function reference used for `on`.
      */
     off(eventName, callbackToRemove) {
+        if (typeof eventName !== 'string' || eventName.trim() === '') {
+            console.warn(`[EventBus] Attempted to remove listener with invalid eventName (must be non-empty string). Received: ${eventName}`);
+            return;
+        }
+        if (typeof callbackToRemove !== 'function') {
+            console.warn(`[EventBus] Attempted to remove listener with non-function callback for event: ${eventName}`);
+            return;
+        }
+
         if (!this.listeners[eventName]) {
-            // console.warn(`[EventBus] Attempted to remove listener for non-existent event: ${eventName}`);
+            // console.warn(`[EventBus] Attempted to remove listener for non-existent event: ${eventName}`); // This was already commented out
             return;
         }
 
         this.listeners[eventName] = this.listeners[eventName].filter(
             (callback) => callback !== callbackToRemove
         );
-        // console.log(`[EventBus] Listener removed for: ${eventName}`);
     }
 
     /**
@@ -66,7 +76,10 @@ export class EventBus {
      * @param {...any} args - Arguments to pass to the event listeners.
      */
     emit(eventName, ...args) {
-        // console.log(`[EventBus] Emitting event: ${eventName}`, args);
+        if (typeof eventName !== 'string' || eventName.trim() === '') {
+            console.warn(`[EventBus] Attempted to emit event with invalid eventName (must be non-empty string). Received: ${eventName}`);
+            return;
+        }
         if (!this.listeners[eventName]) {
             return;
         }

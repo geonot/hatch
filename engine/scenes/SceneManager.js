@@ -26,6 +26,15 @@ class SceneManager {
      *        This provides access to other engine systems like ErrorHandler, EventBus, and RenderingEngine.
      */
     constructor(engine) {
+        if (!engine || !engine.errorHandler || !engine.Scene) {
+            const errorMsg = "SceneManager constructor: Valid 'engine' instance with 'errorHandler' and 'Scene' class reference is required.";
+            if (engine && engine.errorHandler) {
+                engine.errorHandler.critical(errorMsg, { component: 'SceneManager', method: 'constructor' });
+            } else {
+                console.error(errorMsg); // Fallback if errorHandler is not available
+            }
+            throw new Error(errorMsg);
+        }
         /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
         /** @type {Map<string, import('./Scene.js').Scene | Function>} */
@@ -51,6 +60,15 @@ class SceneManager {
      *                                                                       or a constructor for a Scene subclass.
      */
     add(name, sceneClassOrInstance) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            this.engine.errorHandler.error("SceneManager.add: 'name' must be a non-empty string.", { component: 'SceneManager', method: 'add', params: { nameProvided: name } });
+            return;
+        }
+        if (!sceneClassOrInstance || (typeof sceneClassOrInstance !== 'function' && typeof sceneClassOrInstance !== 'object')) {
+            this.engine.errorHandler.error(`SceneManager.add: 'sceneClassOrInstance' for scene '${name}' must be a class constructor or an object instance.`, { component: 'SceneManager', method: 'add', params: { name, typeProvided: typeof sceneClassOrInstance } });
+            return;
+        }
+
         let isValid = false;
         let typeAdded = '';
 
@@ -63,13 +81,10 @@ class SceneManager {
         }
 
         if (!isValid) {
-            const errorMsg = `Attempted to add object which is not a valid Scene instance or Scene constructor.`;
-            // console.error is kept here as the original instruction was about standardizing errorObject for ErrorHandler calls.
-            // This specific console.error is outside an ErrorHandler call.
-            console.error(`SceneManager.add: ${errorMsg} for name '${name}'. Provided:`, sceneClassOrInstance);
+            const errorMsg = `Attempted to add object which is not a valid Scene instance or Scene constructor for name '${name}'. Provided object type: ${typeof sceneClassOrInstance}.`;
             this.engine.errorHandler.error(errorMsg, {
                 component: 'SceneManager',
-                method: 'add.validation',
+                method: 'add',
                 params: { name, providedType: typeof sceneClassOrInstance }
             });
             return;
@@ -79,7 +94,7 @@ class SceneManager {
             const oldEntry = this.scenes.get(name);
             // If the old entry is an instance and has a destroy method, call it.
             if (typeof oldEntry !== 'function' && oldEntry && typeof oldEntry.destroy === 'function') {
-                console.warn(`SceneManager.add: Scene with name '${name}' already exists (was an instance). Destroying old instance before overwriting.`);
+                this.engine.errorHandler.warn(`Scene with name '${name}' already exists (was an instance). Destroying old instance before overwriting.`, { component: 'SceneManager', method: 'add', params: { name } });
                 try {
                     oldEntry.destroy();
                 } catch (e) {
@@ -94,15 +109,15 @@ class SceneManager {
                     );
                 }
             } else {
-                 console.warn(`SceneManager.add: Scene or class with name '${name}' already exists. Overwriting.`);
+                 this.engine.errorHandler.warn(`Scene or class with name '${name}' already exists. Overwriting.`, { component: 'SceneManager', method: 'add', params: { name } });
             }
         }
 
         this.scenes.set(name, sceneClassOrInstance);
         if (typeAdded === 'class') {
-            console.log(`SceneManager: Scene class '${sceneClassOrInstance.name}' registered as '${name}'. It will be instantiated on first switch.`);
+            this.engine.errorHandler.info(`Scene class '${sceneClassOrInstance.name}' registered as '${name}'. It will be instantiated on first switch.`, { component: 'SceneManager', method: 'add', params: { name, sceneClassName: sceneClassOrInstance.name, typeAdded } });
         } else {
-            console.log(`SceneManager: Scene instance '${name}' (instance of ${sceneClassOrInstance.constructor.name}) added.`);
+            this.engine.errorHandler.info(`Scene instance '${name}' (instance of ${sceneClassOrInstance.constructor.name}) added.`, { component: 'SceneManager', method: 'add', params: { name, sceneInstanceName: sceneClassOrInstance.constructor.name, typeAdded } });
         }
     }
 
@@ -258,6 +273,10 @@ class SceneManager {
     }
 
     async switchTo(name, ...args) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            this.engine.errorHandler.error("SceneManager.switchTo: 'name' must be a non-empty string.", { component: 'SceneManager', method: 'switchTo', params: { nameProvided: name } });
+            return;
+        }
         const sceneEntry = this._validateAndRetrieveScene(name);
         if (!sceneEntry) return;
 
@@ -269,7 +288,7 @@ class SceneManager {
 
         this.currentScene = newSceneInstance;
         this.currentSceneName = name;
-        console.log(`SceneManager: Switching from '${oldSceneName || 'none'}' to '${name}'.`);
+        this.engine.errorHandler.info(`Switching from scene '${oldSceneName || 'none'}' to '${name}'.`, { component: 'SceneManager', method: 'switchTo', params: { oldSceneName, newSceneName: name } });
 
         const success = await this._loadAndInitializeScene(newSceneInstance, name, args);
 
@@ -280,14 +299,14 @@ class SceneManager {
             this.currentSceneName = null;
             // Consider if we should attempt to switch back to oldSceneName, though that could also fail.
             // For now, leaving the engine without a current scene is a clear indication of failure.
-            console.error(`SceneManager: Failed to switch to scene '${name}' due to lifecycle errors. No scene is currently active.`);
+            this.engine.errorHandler.error(`Failed to switch to scene '${name}' due to lifecycle errors. No scene is currently active.`, { component: 'SceneManager', method: 'switchTo', params: { name } });
             return;
         }
 
         if (this.engine.eventBus) {
             this.engine.eventBus.emit(SceneEvents.SCENE_SWITCHED, { name: this.currentSceneName, scene: this.currentScene });
         }
-        console.log(`SceneManager: Successfully switched to scene '${this.currentSceneName}'.`);
+        this.engine.errorHandler.info(`Successfully switched to scene '${this.currentSceneName}'.`, { component: 'SceneManager', method: 'switchTo', params: { name: this.currentSceneName } });
     }
 
     /**
@@ -296,6 +315,10 @@ class SceneManager {
      * @param {number} deltaTime - The time elapsed since the last frame, in seconds.
      */
     update(deltaTime) {
+        if (typeof deltaTime !== 'number' || isNaN(deltaTime)) {
+            this.engine.errorHandler.error('SceneManager.update: deltaTime must be a valid number.', { component: 'SceneManager', method: 'update', params: { deltaTime } });
+            return;
+        }
         if (this.currentScene && typeof this.currentScene.update === 'function') {
             try {
                 this.currentScene.update(deltaTime);
@@ -321,6 +344,10 @@ class SceneManager {
      * @param {import('../rendering/RenderingEngine.js').default} renderingEngine - The engine's rendering manager.
      */
     render(renderingEngine) {
+        if (!renderingEngine || typeof renderingEngine.add !== 'function') {
+            this.engine.errorHandler.error('SceneManager.render: A valid RenderingEngine instance is required.', { component: 'SceneManager', method: 'render', hasRenderingEngine: !!renderingEngine });
+            return;
+        }
         if (this.currentScene && typeof this.currentScene.render === 'function') {
              try {
                 this.currentScene.render(renderingEngine);
@@ -347,7 +374,7 @@ class SceneManager {
     destroyCurrentScene() {
         if (this.currentScene) {
             const sceneToDestroyName = this.currentSceneName;
-            console.log(`SceneManager: Destroying current scene '${sceneToDestroyName}'.`);
+            this.engine.errorHandler.info(`Destroying current scene '${sceneToDestroyName}'.`, { component: 'SceneManager', method: 'destroyCurrentScene', params: { name: sceneToDestroyName } });
             if (typeof this.currentScene.exit === 'function') {
                 try { this.currentScene.exit(); } catch (e) {
                     this.engine.errorHandler.error(

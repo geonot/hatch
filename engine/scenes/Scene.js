@@ -43,8 +43,6 @@ class Scene {
         this.sceneManager = engine.sceneManager;
         /** @type {import('../core/EventBus.js').EventBus} */
         this.eventBus = engine.eventBus;
-
-        // Example: this.engine.errorHandler.info(`Scene '${this.constructor.name}' constructed.`, { component: 'Scene', method: 'constructor' });
     }
 
     /**
@@ -79,7 +77,6 @@ class Scene {
      * @example
      * async load() {
      *   await this.assetManager.loadAsset({ name: 'playerSprite', path: 'path/to/player.png', type: AssetTypes.IMAGE });
-     *   this.engine.errorHandler.info("MyScene assets loaded.", { component: this.constructor.name, method: "load" });
      * }
      */
     async load() {
@@ -97,7 +94,6 @@ class Scene {
      * init(levelData) {
      *   this.player = new Player(this.engine, levelData.playerStartPos);
      *   this.score = 0;
-     *   this.engine.errorHandler.info(`MyScene initialized with level: ${levelData.name}`, { component: this.constructor.name, method: "init" });
      * }
      */
     init(...args) {
@@ -117,7 +113,6 @@ class Scene {
      * async enter() {
      *   this.uiManager.showHUD();
      *   await this.soundManager.playMusic('background_theme');
-     *   this.engine.errorHandler.info("MyScene entered.", { component: this.constructor.name, method: "enter" });
      * }
      */
     async enter() {
@@ -137,7 +132,6 @@ class Scene {
      * async exit() {
      *   await this.soundManager.stopMusic();
      *   this.saveGameProgress();
-     *   this.engine.errorHandler.info("MyScene exited.", { component: this.constructor.name, method: "exit" });
      * }
      */
     async exit() {
@@ -185,7 +179,6 @@ class Scene {
      */
     destroy() {
         // Intended to be overridden by subclasses.
-        // Example: this.engine.errorHandler.info(`Scene '${this.constructor.name}' destroyed.`, { component: this.constructor.name, method: "destroy" });
     }
 }
 

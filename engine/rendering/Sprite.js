@@ -71,39 +71,46 @@ class Sprite {
             // This error is critical for the sprite's functionality.
             throw new Error("Sprite constructor: 'image' parameter must be an HTMLImageElement.");
         }
-        /** @type {HTMLImageElement} The source image element. */
         this.image = image;
 
-        /** @type {number} X-coordinate of the sprite's anchor in world space. */
-        this.x = x;
-        /** @type {number} Y-coordinate of the sprite's anchor in world space. */
-        this.y = y;
+        this.x = (typeof x === 'number') ? x : 0;
+        this.y = (typeof y === 'number') ? y : 0;
 
-        /** @type {number} X-offset in the source image for sprite sheet functionality. */
-        this.sourceX = sourceX;
-        /** @type {number} Y-offset in the source image for sprite sheet functionality. */
-        this.sourceY = sourceY;
-        /** @type {number} Width of the sub-rectangle in the source image. */
-        this.sourceWidth = sourceWidth === undefined ? image.naturalWidth : sourceWidth;
-        /** @type {number} Height of the sub-rectangle in the source image. */
-        this.sourceHeight = sourceHeight === undefined ? image.naturalHeight : sourceHeight;
+        this.sourceX = (typeof sourceX === 'number') ? sourceX : 0;
+        this.sourceY = (typeof sourceY === 'number') ? sourceY : 0;
 
-        /** @type {number} Rendered width of the sprite in world units. */
-        this.width = width === undefined ? this.sourceWidth : width;
-        /** @type {number} Rendered height of the sprite in world units. */
-        this.height = height === undefined ? this.sourceHeight : height;
+        const natWidth = image.naturalWidth || 0; // Default to 0 if not loaded
+        const natHeight = image.naturalHeight || 0;
 
-        /** @type {number} Rotation in radians around the anchor point. */
-        this.rotation = rotation;
-        /** @type {number} Opacity, clamped between 0 and 1. */
-        this.alpha = Math.max(0, Math.min(1, alpha));
-        /** @type {boolean} Controls rendering of the sprite. */
-        this.visible = visible;
+        this.sourceWidth = (typeof sourceWidth === 'number') ? sourceWidth : natWidth;
+        this.sourceHeight = (typeof sourceHeight === 'number') ? sourceHeight : natHeight;
 
-        /** @type {number} Normalized horizontal anchor point (0-1). */
-        this.anchorX = anchorX;
-        /** @type {number} Normalized vertical anchor point (0-1). */
-        this.anchorY = anchorY;
+        this.width = (typeof width === 'number') ? width : this.sourceWidth;
+        this.height = (typeof height === 'number') ? height : this.sourceHeight;
+
+        if (this.width < 0) { console.warn(`Sprite constructor: 'width' is negative (${this.width}). Using 0.`); this.width = 0; }
+        if (this.height < 0) { console.warn(`Sprite constructor: 'height' is negative (${this.height}). Using 0.`); this.height = 0; }
+        if (this.sourceWidth < 0) { console.warn(`Sprite constructor: 'sourceWidth' is negative (${this.sourceWidth}). Using 0.`); this.sourceWidth = 0; }
+        if (this.sourceHeight < 0) { console.warn(`Sprite constructor: 'sourceHeight' is negative (${this.sourceHeight}). Using 0.`); this.sourceHeight = 0; }
+
+
+        this.rotation = (typeof rotation === 'number') ? rotation : 0;
+
+        this.alpha = (typeof alpha === 'number') ? Math.max(0, Math.min(1, alpha)) : 1;
+
+        this.visible = (typeof visible === 'boolean') ? visible : true;
+
+        this.anchorX = (typeof anchorX === 'number') ? Math.max(0, Math.min(1, anchorX)) : 0.5;
+        this.anchorY = (typeof anchorY === 'number') ? Math.max(0, Math.min(1, anchorY)) : 0.5;
+
+        if (typeof x !== 'number' || typeof y !== 'number' ||
+            (width !== undefined && typeof width !== 'number') || (height !== undefined && typeof height !== 'number') ||
+            typeof sourceX !== 'number' || typeof sourceY !== 'number' ||
+            (sourceWidth !== undefined && typeof sourceWidth !== 'number') || (sourceHeight !== undefined && typeof sourceHeight !== 'number') ||
+            typeof rotation !== 'number' || typeof alpha !== 'number' || typeof visible !== 'boolean' ||
+            typeof anchorX !== 'number' || typeof anchorY !== 'number') {
+            console.warn("Sprite constructor: One or more optional parameters had an invalid type and were set to defaults. Check inputs.", { imageSrc: image.src, x, y, width, height, sourceX, sourceY, sourceWidth, sourceHeight, rotation, alpha, visible, anchorX, anchorY });
+        }
     }
 
     /**
@@ -115,15 +122,22 @@ class Sprite {
      * @param {CanvasRenderingContext2D} ctx - The rendering context to draw on.
      */
     render(ctx) {
+        if (!(ctx instanceof CanvasRenderingContext2D)) {
+            console.error("Sprite.render: ctx must be an instance of CanvasRenderingContext2D.");
+            return;
+        }
+
         if (!this.visible || this.alpha <= 0 || !this.image || this.width === 0 || this.height === 0) {
-            // Do not render if invisible, fully transparent, no image, or zero size.
-            // Zero size check prevents potential drawImage errors with 0 width/height.
             return;
         }
 
         ctx.save();
 
-        ctx.globalAlpha = this.alpha;
+        if (typeof this.alpha === 'number') { // Ensure alpha is still valid before use
+            ctx.globalAlpha = this.alpha;
+        } else {
+            ctx.globalAlpha = 1; // Default if somehow alpha became invalid
+        }
 
         // Translate to the sprite's world position (which is its anchor point)
         ctx.translate(this.x, this.y);
@@ -180,6 +194,10 @@ class Sprite {
      * @param {number} y - The new y-coordinate in world space.
      */
     setPosition(x, y) {
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            console.warn("Sprite.setPosition: x and y must be numbers.", { x, y });
+            return;
+        }
         this.x = x;
         this.y = y;
     }
@@ -190,8 +208,12 @@ class Sprite {
      * @param {number} height - The new height in world units.
      */
     setSize(width, height) {
-        this.width = width;
-        this.height = height;
+        if (typeof width !== 'number' || typeof height !== 'number') {
+            console.warn("Sprite.setSize: width and height must be numbers.", { width, height });
+            return;
+        }
+        this.width = width >= 0 ? width : 0; // Prevent negative size
+        this.height = height >= 0 ? height : 0;
     }
 
     /**
@@ -199,6 +221,10 @@ class Sprite {
      * @param {number} radians - The new rotation in radians.
      */
     setRotation(radians) {
+        if (typeof radians !== 'number') {
+            console.warn("Sprite.setRotation: radians must be a number.", { radians });
+            return;
+        }
         this.rotation = radians;
     }
 
@@ -208,6 +234,10 @@ class Sprite {
      * @param {number} alpha - The new alpha value.
      */
     setAlpha(alpha) {
+        if (typeof alpha !== 'number') {
+            console.warn("Sprite.setAlpha: alpha must be a number.", { alpha });
+            return;
+        }
         this.alpha = Math.max(0, Math.min(1, alpha));
     }
 
@@ -217,6 +247,10 @@ class Sprite {
      * @param {boolean} visible - True if the sprite should be visible, false otherwise.
      */
     setVisible(visible) {
+        if (typeof visible !== 'boolean') {
+            console.warn("Sprite.setVisible: visible must be a boolean.", { visible });
+            return;
+        }
         this.visible = visible;
     }
 
@@ -228,8 +262,12 @@ class Sprite {
      * @param {number} anchorY - The normalized vertical anchor point (0-1).
      */
     setAnchor(anchorX, anchorY) {
-        this.anchorX = anchorX;
-        this.anchorY = anchorY;
+        if (typeof anchorX !== 'number' || typeof anchorY !== 'number') {
+            console.warn("Sprite.setAnchor: anchorX and anchorY must be numbers.", { anchorX, anchorY });
+            return;
+        }
+        this.anchorX = Math.max(0, Math.min(1, anchorX));
+        this.anchorY = Math.max(0, Math.min(1, anchorY));
     }
 
     /**
@@ -241,10 +279,14 @@ class Sprite {
      * @param {number} sHeight - The height of the source sub-rectangle.
      */
     setSourceRect(sx, sy, sWidth, sHeight) {
-        this.sourceX = sx;
-        this.sourceY = sy;
-        this.sourceWidth = sWidth;
-        this.sourceHeight = sHeight;
+        if (typeof sx !== 'number' || typeof sy !== 'number' || typeof sWidth !== 'number' || typeof sHeight !== 'number') {
+            console.warn("Sprite.setSourceRect: sx, sy, sWidth, and sHeight must be numbers.", { sx, sy, sWidth, sHeight });
+            return;
+        }
+        this.sourceX = sx >= 0 ? sx : 0;
+        this.sourceY = sy >= 0 ? sy : 0;
+        this.sourceWidth = sWidth >= 0 ? sWidth : 0;
+        this.sourceHeight = sHeight >= 0 ? sHeight : 0;
     }
 }
 

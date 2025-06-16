@@ -25,6 +25,13 @@ class Camera {
      * @param {number} viewportHeight - The height of the viewport in logical pixels (e.g., canvas.height).
      */
     constructor(viewportWidth, viewportHeight) {
+        if (typeof viewportWidth !== 'number' || viewportWidth <= 0) {
+            throw new RangeError("Camera constructor: viewportWidth must be a positive number.");
+        }
+        if (typeof viewportHeight !== 'number' || viewportHeight <= 0) {
+            throw new RangeError("Camera constructor: viewportHeight must be a positive number.");
+        }
+
         /** @type {number} World x-coordinate of the camera's center. */
         this.x = 0;
         /** @type {number} World y-coordinate of the camera's center. */
@@ -51,6 +58,10 @@ class Camera {
      * @param {CanvasRenderingContext2D} ctx - The 2D rendering context to transform.
      */
     applyTransform(ctx) {
+        if (!(ctx instanceof CanvasRenderingContext2D)) {
+            console.error("Camera.applyTransform: ctx must be an instance of CanvasRenderingContext2D.");
+            return;
+        }
         ctx.translate(this.viewportWidth / 2, this.viewportHeight / 2);
         const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom; // Prevent zero, negative, or extremely small zoom
         ctx.scale(currentZoom, currentZoom);
@@ -66,6 +77,10 @@ class Camera {
      * @returns {{x: number, y: number}} The corresponding screen coordinates.
      */
     worldToScreen(worldX, worldY) {
+        if (typeof worldX !== 'number' || typeof worldY !== 'number') {
+            console.warn("Camera.worldToScreen: worldX and worldY must be numbers.", { worldX, worldY });
+            return { x: NaN, y: NaN };
+        }
         let screenX = worldX - this.x; // World relative to camera center
         let screenY = worldY - this.y;
 
@@ -87,6 +102,10 @@ class Camera {
      * @returns {{x: number, y: number}} The corresponding world coordinates.
      */
     screenToWorld(screenX, screenY) {
+        if (typeof screenX !== 'number' || typeof screenY !== 'number') {
+            console.warn("Camera.screenToWorld: screenX and screenY must be numbers.", { screenX, screenY });
+            return { x: NaN, y: NaN };
+        }
         let worldX = screenX - this.viewportWidth / 2; // Screen relative to viewport center
         let worldY = screenY - this.viewportHeight / 2;
 
@@ -114,6 +133,10 @@ class Camera {
      * @returns {boolean} True if the rectangle is (or might be) in view, false otherwise.
      */
     isRectInView({ x, y, width, height }) {
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+            console.warn("Camera.isRectInView: x, y, width, and height must be numbers.", { x, y, width, height });
+            return false;
+        }
         const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom;
         const viewHalfWidth = (this.viewportWidth / 2) / currentZoom;
         const viewHalfHeight = (this.viewportHeight / 2) / currentZoom;
@@ -139,6 +162,10 @@ class Camera {
      * @param {number} y - The target world y-coordinate.
      */
     moveTo(x, y) {
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            console.warn("Camera.moveTo: x and y must be numbers.", { x, y });
+            return;
+        }
         this.x = x;
         this.y = y;
     }
@@ -148,10 +175,13 @@ class Camera {
      * @param {number} zoomLevel - The new zoom level. Must be a positive number to be applied.
      */
     setZoom(zoomLevel) {
+        if (typeof zoomLevel !== 'number') {
+            console.warn("Camera.setZoom: Zoom level must be a number.");
+            return;
+        }
         if (zoomLevel > 0) {
             this.zoom = zoomLevel;
         } else {
-            // This warning is acceptable for a direct utility function like this.
             console.warn("Camera.setZoom: Zoom level must be positive.");
         }
     }

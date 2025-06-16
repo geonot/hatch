@@ -57,35 +57,56 @@ class Tile {
         color = 'magenta',
         visible = true
     }) {
-        /** @type {string} The type identifier for the tile. */
+        if (typeof type !== 'string' || type.trim() === '') {
+            throw new TypeError("Tile constructor: 'type' must be a non-empty string.");
+        }
         this.type = type;
-        /** @type {number} The x-coordinate of the tile in grid units (column). */
+
+        if (typeof gridX !== 'number' || typeof gridY !== 'number' || typeof worldX !== 'number' || typeof worldY !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+            throw new TypeError("Tile constructor: gridX, gridY, worldX, worldY, width, and height must be numbers.");
+        }
+        if (width <= 0 || height <= 0) {
+            console.warn(`Tile constructor (type: ${type}): 'width' and 'height' should be positive. Received: ${width}x${height}. Tile may not render correctly.`);
+        }
         this.gridX = gridX;
-        /** @type {number} The y-coordinate of the tile in grid units (row). */
         this.gridY = gridY;
-        /** @type {number} The x-coordinate of the tile's top-left corner in world space. */
         this.worldX = worldX;
-        /** @type {number} The y-coordinate of the tile's top-left corner in world space. */
         this.worldY = worldY;
-        /** @type {number} The width of the tile in world units. */
         this.width = width;
-        /** @type {number} The height of the tile in world units. */
         this.height = height;
-        /** @type {object} Custom data associated with this tile. */
-        this.data = data;
-        /** @type {import('../rendering/Sprite.js').Sprite | null} The Sprite instance for this tile, if any. */
-        this.sprite = sprite;
-        /** @type {string | null} Fallback color; null if a sprite is actively used. */
-        this.color = sprite ? null : color;
-        /** @type {boolean} Whether this tile should be rendered. */
-        this.visible = visible;
+
+        if (typeof data !== 'object' || data === null) {
+            console.warn(`Tile constructor (type: ${type}): 'data' should be an object. Defaulting to {}.`);
+            this.data = {};
+        } else {
+            this.data = data;
+        }
+
+        // sprite can be null or an instance of Sprite (assuming Sprite class is available for instanceof if needed, but null check is primary)
+        if (sprite !== null && (typeof sprite !== 'object' || typeof sprite.render !== 'function')) { // Basic check for sprite-like object
+            console.warn(`Tile constructor (type: ${type}): 'sprite' if provided should be a renderable Sprite object or null. Defaulting to null.`);
+            this.sprite = null;
+        } else {
+            this.sprite = sprite;
+        }
+
+        if (typeof color !== 'string') {
+            console.warn(`Tile constructor (type: ${type}): 'color' should be a string. Defaulting to 'magenta'.`);
+            this.color = 'magenta';
+        } else {
+            this.color = this.sprite ? null : color;
+        }
+
+        if (typeof visible !== 'boolean') {
+            console.warn(`Tile constructor (type: ${type}): 'visible' should be a boolean. Defaulting to true.`);
+            this.visible = true;
+        } else {
+            this.visible = visible;
+        }
 
         // It's crucial that tile sprites have their anchor at (0,0) if their
         // position is set to the tile's top-left world coordinates.
         // TileManager ensures this when creating sprites for tiles.
-        // if (this.sprite && (this.sprite.anchorX !== 0 || this.sprite.anchorY !== 0)) {
-        //     console.warn(`Tile (${type} at ${gridX},${gridY}): Sprite anchor is not (0,0). This might lead to incorrect rendering if position is set to tile's top-left. Consider setting sprite anchor to (0,0) for tiles.`);
-        // }
     }
 
     /**
@@ -127,6 +148,10 @@ class Tile {
      * @param {boolean} visible - True if the tile should be visible, false otherwise.
      */
     setVisible(visible) {
+        if (typeof visible !== 'boolean') {
+            console.warn(`Tile.setVisible: 'visible' must be a boolean. Received: ${typeof visible}. Action aborted.`);
+            return;
+        }
         this.visible = visible;
         if (this.sprite) {
             this.sprite.setVisible(visible);
@@ -143,7 +168,6 @@ class Tile {
      * If the tile's sprite had its own destroy method, it could be called here.
      */
     destroy() {
-        // console.log(`Tile (${this.type} at ${this.gridX},${this.gridY}) destroyed.`); // Example logging
         // No direct access to engine.errorHandler here by default, logging would be up to the manager.
         if (this.sprite && typeof this.sprite.destroy === 'function') {
             // If sprites have their own destroy method for cleanup (e.g., releasing texture references from a cache)

@@ -49,22 +49,51 @@ class GridManager {
             // This is a critical setup error.
             throw new Error("GridManager constructor: 'engine' instance is required.");
         }
-        /** @type {import('../core/HatchEngine.js').HatchEngine} */
-        this.engine = engine;
-        /** @type {string} The type of grid layout (e.g., 'square'). */
+        this.engine = engine; // Assign early so errorHandler can be used if needed
+
+        if (typeof type !== 'string') {
+            this.engine.errorHandler.error("GridManager constructor: 'type' must be a string.", { component: 'GridManager', method: 'constructor', params: { type } });
+            throw new TypeError("GridManager constructor: 'type' must be a string.");
+        }
         this.type = type;
-        /** @type {number} The width of each individual tile in world units. */
+
+        if (typeof tileWidth !== 'number' || tileWidth <= 0) {
+            this.engine.errorHandler.error("GridManager constructor: 'tileWidth' must be a positive number.", { component: 'GridManager', method: 'constructor', params: { tileWidth } });
+            throw new RangeError("GridManager constructor: 'tileWidth' must be a positive number.");
+        }
         this.tileWidth = tileWidth;
-        /** @type {number} The height of each individual tile in world units. */
+
+        if (typeof tileHeight !== 'number' || tileHeight <= 0) {
+            this.engine.errorHandler.error("GridManager constructor: 'tileHeight' must be a positive number.", { component: 'GridManager', method: 'constructor', params: { tileHeight } });
+            throw new RangeError("GridManager constructor: 'tileHeight' must be a positive number.");
+        }
         this.tileHeight = tileHeight;
-        /** @type {number} The total width of the map in terms of number of tiles. */
+
+        if (typeof mapWidth !== 'number' || mapWidth <= 0) {
+            this.engine.errorHandler.error("GridManager constructor: 'mapWidth' must be a positive number.", { component: 'GridManager', method: 'constructor', params: { mapWidth } });
+            throw new RangeError("GridManager constructor: 'mapWidth' must be a positive number.");
+        }
         this.mapWidth = mapWidth;
-        /** @type {number} The total height of the map in terms of number of tiles. */
+
+        if (typeof mapHeight !== 'number' || mapHeight <= 0) {
+            this.engine.errorHandler.error("GridManager constructor: 'mapHeight' must be a positive number.", { component: 'GridManager', method: 'constructor', params: { mapHeight } });
+            throw new RangeError("GridManager constructor: 'mapHeight' must be a positive number.");
+        }
         this.mapHeight = mapHeight;
-        /** @type {number} The x-coordinate of the grid's origin (top-left) in world space. */
-        this.offsetX = offsetX;
-        /** @type {number} The y-coordinate of the grid's origin (top-left) in world space. */
-        this.offsetY = offsetY;
+
+        if (typeof offsetX !== 'number') {
+            this.engine.errorHandler.warn("GridManager constructor: 'offsetX' should be a number. Defaulting to 0.", { component: 'GridManager', method: 'constructor', params: { offsetX } });
+            this.offsetX = 0;
+        } else {
+            this.offsetX = offsetX;
+        }
+
+        if (typeof offsetY !== 'number') {
+            this.engine.errorHandler.warn("GridManager constructor: 'offsetY' should be a number. Defaulting to 0.", { component: 'GridManager', method: 'constructor', params: { offsetY } });
+            this.offsetY = 0;
+        } else {
+            this.offsetY = offsetY;
+        }
 
         /**
          * A 1D array storing custom data for each grid cell. The data is laid out row by row.
@@ -89,6 +118,14 @@ class GridManager {
      *                                   Coordinates may be outside the grid boundaries if worldX/worldY are outside.
      */
     worldToGrid(worldX, worldY) {
+        if (typeof worldX !== 'number' || typeof worldY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for worldToGrid (must be numbers).', { component: 'GridManager', method: 'worldToGrid', params: { worldX, worldY } });
+            return { x: NaN, y: NaN };
+        }
+        if (this.tileWidth === 0 || this.tileHeight === 0) {
+            this.engine.errorHandler.error('Tile dimensions (tileWidth/tileHeight) are zero, cannot perform worldToGrid conversion.', { component: 'GridManager', method: 'worldToGrid' });
+            return { x: NaN, y: NaN };
+        }
         const relativeX = worldX - this.offsetX;
         const relativeY = worldY - this.offsetY;
 
@@ -107,6 +144,14 @@ class GridManager {
      * @returns {{x: number, y: number}} An object containing the world `x` and `y` coordinates.
      */
     gridToWorld(gridX, gridY, centered = false) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for gridToWorld (must be numbers).', { component: 'GridManager', method: 'gridToWorld', params: { gridX, gridY } });
+            return { x: NaN, y: NaN };
+        }
+        if (typeof centered !== 'boolean') {
+            this.engine.errorHandler.warn('Invalid type for "centered" parameter in gridToWorld (must be boolean). Defaulting to false.', { component: 'GridManager', method: 'gridToWorld', params: { centered } });
+            centered = false;
+        }
         let worldX = (gridX * this.tileWidth) + this.offsetX;
         let worldY = (gridY * this.tileHeight) + this.offsetY;
 
@@ -124,6 +169,10 @@ class GridManager {
      * @returns {boolean} True if the position is within the map boundaries, false otherwise.
      */
     isValidGridPosition(gridX, gridY) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for isValidGridPosition (must be numbers).', { component: 'GridManager', method: 'isValidGridPosition', params: { gridX, gridY } });
+            return false;
+        }
         return gridX >= 0 && gridX < this.mapWidth && gridY >= 0 && gridY < this.mapHeight;
     }
 
@@ -137,6 +186,14 @@ class GridManager {
      *                                           representing the coordinates of a valid neighbor.
      */
     getNeighbors(gridX, gridY, includeDiagonals = false) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for getNeighbors (gridX/gridY must be numbers).', { component: 'GridManager', method: 'getNeighbors', params: { gridX, gridY } });
+            return [];
+        }
+        if (typeof includeDiagonals !== 'boolean') {
+            this.engine.errorHandler.warn('Invalid type for "includeDiagonals" in getNeighbors (must be boolean). Defaulting to false.', { component: 'GridManager', method: 'getNeighbors', params: { includeDiagonals } });
+            includeDiagonals = false;
+        }
         const neighbors = [];
         const baseDirections = [ // Cardinal directions
             { dx: 0, dy: -1, name: 'N' }, { dx: 1, dy: 0, name: 'E' },
@@ -169,10 +226,16 @@ class GridManager {
      * @returns {boolean} True if the data was set successfully (i.e., the position was valid), false otherwise.
      */
     setTileData(gridX, gridY, data) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for setTileData (gridX/gridY must be numbers).', { component: 'GridManager', method: 'setTileData', params: { gridX, gridY } });
+            return false;
+        }
         if (this.isValidGridPosition(gridX, gridY)) {
             this.gridData[gridY * this.mapWidth + gridX] = data;
             return true;
         }
+        // isValidGridPosition would have already logged an error if types were wrong,
+        // so this warn is specifically for out-of-bounds after type validation.
         this.engine.errorHandler.warn(
             `Attempted to set tile data outside grid boundaries.`, {
                 component: 'GridManager',
@@ -192,12 +255,15 @@ class GridManager {
      *                            coordinates are outside the grid boundaries.
      */
     getTileData(gridX, gridY) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for getTileData (gridX/gridY must be numbers).', { component: 'GridManager', method: 'getTileData', params: { gridX, gridY } });
+            return undefined;
+        }
         if (this.isValidGridPosition(gridX, gridY)) {
             return this.gridData[gridY * this.mapWidth + gridX];
         }
-        // Optionally log a warning if trying to get data from outside bounds, though often this might be intentional.
-        // this.engine.errorHandler.debug(`Attempted to get tile data outside grid boundaries.`,
-        //     { component: 'GridManager', method: 'getTileData', params: { gridX, gridY }});
+        // isValidGridPosition would have already logged an error if types were wrong.
+        // No additional log here for out-of-bounds get, as it's a common way to check.
         return undefined;
     }
 
@@ -213,13 +279,21 @@ class GridManager {
      *                                 The actual visual thickness will be adjusted by camera zoom within `renderingEngine.drawLine`.
      */
     renderGridLines(renderingEngine, color = '#555555', lineWidth = 1) {
-        if (!renderingEngine || !renderingEngine.context || typeof renderingEngine.drawLine !== 'function') {
+        if (!renderingEngine || typeof renderingEngine.drawLine !== 'function') {
             this.engine.errorHandler.error("Valid RenderingEngine with drawLine method is required to render grid lines.", {
                 component: 'GridManager',
                 method: 'renderGridLines',
-                params: { hasRenderingEngine: !!renderingEngine, hasContext: !!(renderingEngine && renderingEngine.context), hasDrawLine: typeof renderingEngine?.drawLine }
+                params: { hasRenderingEngine: !!renderingEngine, hasDrawLine: typeof renderingEngine?.drawLine }
             });
             return;
+        }
+        if (typeof color !== 'string') {
+            this.engine.errorHandler.warn('Invalid color type for renderGridLines. Defaulting to #555555.', { component: 'GridManager', method: 'renderGridLines', params: { color } });
+            color = '#555555';
+        }
+        if (typeof lineWidth !== 'number' || lineWidth <= 0) {
+            this.engine.errorHandler.warn('Invalid lineWidth for renderGridLines (must be a positive number). Defaulting to 1.', { component: 'GridManager', method: 'renderGridLines', params: { lineWidth } });
+            lineWidth = 1;
         }
 
         // Draw horizontal lines

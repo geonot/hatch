@@ -52,7 +52,7 @@ class TileManager {
         /** @type {Map<string, Tile>} */
         this.tilesMap = new Map();
 
-        console.log("TileManager: Initialized.");
+        this.engine.errorHandler.info("TileManager Initialized.", { component: 'TileManager', method: 'constructor' });
     }
 
     /**
@@ -64,12 +64,37 @@ class TileManager {
      * @param {string} [definition.color='gray'] - Fallback CSS color string to use if `spritePath` is null or sprite fails to load.
      * @param {Object} [definition.properties={}] - Custom properties associated with this tile type (e.g., `{ solid: true, movementCost: 2 }`).
      */
-    defineTileType(name, { spritePath = null, color = 'gray', properties = {} }) {
-        if (this.tileTypes.has(name)) {
-            console.warn(`TileManager.defineTileType: Tile type '${name}' is being redefined.`);
+    defineTileType(name, definition) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            this.engine.errorHandler.error("TileManager.defineTileType: 'name' must be a non-empty string.", { component: 'TileManager', method: 'defineTileType', params: { name } });
+            return;
         }
-        this.tileTypes.set(name, { spritePath, color, properties });
-        console.log(`TileManager: Tile type '${name}' defined. Sprite: ${spritePath || 'N/A'}, Color: ${color}, Properties: ${JSON.stringify(properties)}`);
+        if (typeof definition !== 'object' || definition === null) {
+            this.engine.errorHandler.error(`TileManager.defineTileType: 'definition' for tile type '${name}' must be an object.`, { component: 'TileManager', method: 'defineTileType', params: { name, definition } });
+            return;
+        }
+
+        const { spritePath = null, color = 'gray', properties = {} } = definition;
+
+        if (spritePath !== null && typeof spritePath !== 'string') {
+            this.engine.errorHandler.warn(`TileManager.defineTileType: 'spritePath' for tile type '${name}' must be a string or null. Using null.`, { component: 'TileManager', method: 'defineTileType', params: { name, spritePath } });
+            definition.spritePath = null; // Correct the value to be stored
+        }
+        if (typeof color !== 'string') {
+            this.engine.errorHandler.warn(`TileManager.defineTileType: 'color' for tile type '${name}' must be a string. Using 'gray'.`, { component: 'TileManager', method: 'defineTileType', params: { name, color } });
+            definition.color = 'gray';
+        }
+        if (typeof properties !== 'object' || properties === null) {
+            this.engine.errorHandler.warn(`TileManager.defineTileType: 'properties' for tile type '${name}' must be an object. Using {}.`, { component: 'TileManager', method: 'defineTileType', params: { name, properties } });
+            definition.properties = {};
+        }
+
+        if (this.tileTypes.has(name)) {
+            this.engine.errorHandler.warn(`Tile type '${name}' is being redefined.`, { component: 'TileManager', method: 'defineTileType', params: { name }});
+        }
+        // Use the validated/defaulted values from the destructured definition
+        this.tileTypes.set(name, { spritePath: definition.spritePath !== undefined ? definition.spritePath : spritePath, color: definition.color !== undefined ? definition.color : color, properties: definition.properties !== undefined ? definition.properties : properties });
+        this.engine.errorHandler.info(`Tile type '${name}' defined. Sprite: ${this.tileTypes.get(name).spritePath || 'N/A'}, Color: ${this.tileTypes.get(name).color}, Properties: ${JSON.stringify(this.tileTypes.get(name).properties)}`, { component: 'TileManager', method: 'defineTileType', params: { name, definition: this.tileTypes.get(name) }});
     }
 
     /**
@@ -86,16 +111,28 @@ class TileManager {
      * @async
      */
     async createTile(typeName, gridX, gridY) {
+        if (typeof typeName !== 'string' || typeName.trim() === '') {
+            this.engine.errorHandler.error("TileManager.createTile: 'typeName' must be a non-empty string.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY } });
+            return null;
+        }
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error("TileManager.createTile: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY } });
+            return null;
+        }
+
         if (!this.gridManager.isValidGridPosition(gridX, gridY)) {
-            console.warn(`TileManager.createTile: Attempted to create tile at invalid grid position (${gridX}, ${gridY}).`);
+            this.engine.errorHandler.warn(`Attempted to create tile at invalid grid position (${gridX}, ${gridY}).`, { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY }});
             return null;
         }
 
         const typeDef = this.tileTypes.get(typeName);
         if (!typeDef) {
-            this.engine.errorHandler.handle(new Error(`Tile type '${typeName}' not defined.`), {
-                context: "TileManager.createTile",
-                gridX, gridY, critical: false // Non-critical as it might be an expected condition in level design
+            const errorMessage = `Tile type '${typeName}' not defined.`;
+            this.engine.errorHandler.warn(errorMessage, {
+                component: 'TileManager',
+                method: 'createTile',
+                params: { typeName, gridX, gridY },
+                message: errorMessage // Including original message for clarity in errorObject as well
             });
             return null;
         }
@@ -164,6 +201,10 @@ class TileManager {
      *                      (which could be `null` or `undefined` if no tile or out of bounds).
      */
     getTileAt(gridX, gridY) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error("TileManager.getTileAt: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'getTileAt', params: { gridX, gridY } });
+            return undefined;
+        }
         return this.gridManager.getTileData(gridX, gridY);
     }
 
@@ -174,6 +215,10 @@ class TileManager {
      * @param {number} gridY - The grid y-coordinate (row).
      */
     removeTile(gridX, gridY) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
+            this.engine.errorHandler.error("TileManager.removeTile: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'removeTile', params: { gridX, gridY } });
+            return;
+        }
         const tileKey = `${gridX},${gridY}`;
         // It's better to get the tile from tilesMap directly if we are managing Tile instances there.
         // getTileAt might return raw data if GridManager stores something other than Tile instances directly,
@@ -190,13 +235,12 @@ class TileManager {
             }
             this.gridManager.setTileData(gridX, gridY, null); // Clear from GridManager
             this.tilesMap.delete(tileKey); // Clear from TileManager's map
-            // console.log(`TileManager: Tile at (${gridX},${gridY}) removed and destroyed.`); // Optional log
         } else {
             // If tileToRemove is not in tilesMap, still ensure it's cleared from GridManager if it exists there.
             // This handles cases where GridManager might have data not tracked by tilesMap (though ideally they are in sync).
             if (this.gridManager.getTileData(gridX, gridY) !== null) {
                  this.gridManager.setTileData(gridX, gridY, null);
-                 // console.warn(`TileManager.removeTile: Cleared untracked tile data from GridManager at (${gridX},${gridY}).`);
+                 this.engine.errorHandler.warn(`Cleared untracked tile data from GridManager at (${gridX},${gridY}).`, { component: 'TileManager', method: 'removeTile', params: { gridX, gridY }});
             }
         }
     }
@@ -220,7 +264,7 @@ class TileManager {
             }
         }
         this.tilesMap.clear(); // Clear the TileManager's own map
-        console.log("TileManager: All tiles cleared from GridManager and internal map. Individual tile destroy methods called if present.");
+        this.engine.errorHandler.info("All tiles cleared from GridManager and internal map. Individual tile destroy methods called if present.", { component: 'TileManager', method: 'clearAllTiles'});
     }
 
 
@@ -232,9 +276,7 @@ class TileManager {
      */
     renderTiles(renderingEngine) {
         if (!renderingEngine) {
-            // This should ideally not happen if called from a scene correctly.
-            console.error("TileManager.renderTiles: RenderingEngine instance is required.");
-            // this.engine.errorHandler.handle(new Error("TileManager.renderTiles: RenderingEngine is required."), { context: "TileManager.renderTiles", critical: true});
+            this.engine.errorHandler.error("RenderingEngine instance is required for renderTiles.", { component: 'TileManager', method: 'renderTiles'});
             return;
         }
         for (const tile of this.tilesMap.values()) {

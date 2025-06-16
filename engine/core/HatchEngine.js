@@ -132,7 +132,7 @@ export class HatchEngine {
                     throw new Error('Parsed YAML is not an object.');
                 }
             } catch (yamlError) {
-                console.error(`HatchEngine.loadProjectConfig: Error parsing YAML from ${configPath} with js-yaml: ${yamlError.message}`);
+                console.error('[HATCH|ERROR][Static:HatchEngine.loadProjectConfig] Error parsing YAML content.', { path: configPath, library: 'js-yaml', error: yamlError.message, details: yamlError.stack });
                 // Trigger ErrorHandler or rethrow if critical
                 // For now, we'll let it be caught by the outer catch block to return fallback defaults.
                 throw yamlError; // Re-throw to be caught by the main try-catch
@@ -147,7 +147,7 @@ export class HatchEngine {
             // NOTE: This is a static method, so it cannot access `this.errorHandler` directly.
             // A proper refactor might involve making ErrorHandler accessible statically or passing an instance.
             // For now, console.error is used as per existing structure.
-            console.error(`HatchEngine.loadProjectConfig: Failed to load or parse ${configPath}. Error: ${e.message}. Using fallback defaults.`);
+            console.error('[HATCH|CRITICAL][Static:HatchEngine.loadProjectConfig] Failed to load or parse configuration file.', { path: configPath, error: e.message, details: e.stack }, 'Using fallback default configuration.');
             // If ErrorHandler were available:
             // errorHandler.critical(`Failed to load project config from ${configPath}`, {
             //     component: 'HatchEngine',
@@ -172,8 +172,19 @@ export class HatchEngine {
      *                                 for dependency injection, typically used for testing or extensions.
      */
     constructor(projectConfig) {
+        if (!projectConfig || typeof projectConfig !== 'object') {
+            // ErrorHandler is not available yet. Direct throw is appropriate.
+            throw new Error("HatchEngine constructor: projectConfig must be a valid object.");
+        }
         /** @type {object} */
         this.hatchConfig = projectConfig;
+
+        // Basic check for essential config properties before ErrorHandler is initialized
+        if (typeof this.hatchConfig.canvasId !== 'string' ||
+            typeof this.hatchConfig.gameWidth !== 'number' ||
+            typeof this.hatchConfig.gameHeight !== 'number') {
+            throw new Error("HatchEngine constructor: projectConfig is missing essential properties (canvasId, gameWidth, gameHeight) or they are of the wrong type.");
+        }
 
         /** @type {string} */
         this.canvasId = this.hatchConfig.canvasId;
@@ -266,7 +277,7 @@ export class HatchEngine {
             /** @type {typeof Scene} */
             this.Scene = this.SceneClass;
 
-            console.log('Core managers instantiated.');
+            this.errorHandler.info('Core managers instantiated.', { component: 'HatchEngine', method: 'init' });
 
         } catch (error) {
             // Catch any other unexpected errors during init, including manager instantiation
@@ -287,7 +298,7 @@ export class HatchEngine {
         }
 
         this.eventBus.emit(EngineEvents.INIT, this);
-        console.log('HatchEngine initialized');
+        this.errorHandler.info('HatchEngine initialized', { component: 'HatchEngine', method: 'init' });
     }
 
     /**
@@ -324,7 +335,7 @@ export class HatchEngine {
         this.lastTime = performance.now();
         requestAnimationFrame(this._loop.bind(this));
         this.eventBus.emit(EngineEvents.START, this);
-        console.log('HatchEngine started');
+        this.errorHandler.info('HatchEngine started', { component: 'HatchEngine', method: 'start' });
     }
 
     /**
@@ -337,7 +348,7 @@ export class HatchEngine {
         }
         this.isRunning = false;
         this.eventBus.emit(EngineEvents.STOP, this);
-        console.log('HatchEngine stopped');
+        this.errorHandler.info('HatchEngine stopped', { component: 'HatchEngine', method: 'stop' });
     }
 
     /**
@@ -359,54 +370,67 @@ export class HatchEngine {
         const deltaTime = (currentTime - this.lastTime) / 1000; // deltaTime in seconds
         this.lastTime = currentTime;
 
-        this.eventBus.emit(EngineEvents.UPDATE, deltaTime);
+        try {
+            this.eventBus.emit(EngineEvents.UPDATE, deltaTime);
 
-        // Scene updates (driven by engine:update or directly)
-        if (this.sceneManager && typeof this.sceneManager.update === 'function') {
-            this.sceneManager.update(deltaTime);
-        } else if (!this.sceneManager) {
-            // console.warnOnce('HatchEngine:_loop: this.sceneManager is not available for updates.'); // Requires console.warnOnce utility
+            // Scene updates (driven by engine:update or directly)
+            if (this.sceneManager && typeof this.sceneManager.update === 'function') {
+                this.sceneManager.update(deltaTime);
+            } else if (!this.sceneManager) {
+                this.errorHandler.warn('SceneManager is not available for updates in game loop.', { component: 'HatchEngine', method: '_loop', detail: 'this.sceneManager is null or has no update method.' });
+            }
+
+            // Rendering
+            if (this.renderingEngine) {
+                // 1. Clear canvas (responsibility of RenderingEngine)
+                this.renderingEngine.clear();
+
+                // 2. Apply camera transformations
+                if (this.renderingEngine.context && this.renderingEngine.camera) {
+                    this.renderingEngine.context.save(); // Save context state before camera transform
+                    this.renderingEngine.camera.applyTransform(this.renderingEngine.context);
+
+                    // 3. Scene-specific rendering (scene tells renderingEngine what to draw)
+                    if (this.sceneManager && typeof this.sceneManager.render === 'function') {
+                        this.sceneManager.render(this.renderingEngine);
+                    }
+
+                    // 4. Render all objects added by the scene to the RenderingEngine's list
+                    this.renderingEngine.renderManagedDrawables();
+
+                    // 5. Restore context to pre-camera state (for UI, debug info)
+                    this.renderingEngine.context.restore();
+                } else {
+                    this.errorHandler.warn('RenderingEngine context or camera is not available for rendering transformations.', { component: 'HatchEngine', method: '_loop', detail: 'Context or camera missing.' });
+                }
+
+                // 6. Draw debug information (if enabled)
+                const showDebug = (this.hatchConfig && this.hatchConfig.debug && this.hatchConfig.debug.showStats) ||
+                                  (this.renderingEngine.showDebugInfo); // Assuming RE might have its own flag
+                if (showDebug) {
+                    this.renderingEngine.drawDebugInfo();
+                }
+
+            } else if (!this.renderingEngine) {
+                this.errorHandler.warn('RenderingEngine is not available for rendering in game loop.', { component: 'HatchEngine', method: '_loop', detail: 'this.renderingEngine is null.' });
+                 // Fallback clear if no rendering engine, but this path indicates a setup issue.
+                if (this.ctx) {
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+            }
+
+            this.eventBus.emit(EngineEvents.RENDER, this); // Event indicating render phase is complete or ongoing
+        } catch (loopError) {
+            this.errorHandler.critical('Unhandled error in game loop.', {
+                component: 'HatchEngine',
+                method: '_loop',
+                originalError: loopError
+            });
+            this.stop(); // Stop the game loop to prevent further errors.
+            // Optionally, re-throw if the environment should handle it, but stopping is safer for a game loop.
+            // throw loopError;
+            return; // Exit the loop function
         }
-
-
-        // Rendering
-        if (this.renderingEngine) {
-            // 1. Clear canvas (responsibility of RenderingEngine)
-            this.renderingEngine.clear();
-
-            // 2. Apply camera transformations
-            // Assuming renderingEngine.context and renderingEngine.camera are valid
-            this.renderingEngine.context.save(); // Save context state before camera transform
-            this.renderingEngine.camera.applyTransform(this.renderingEngine.context);
-
-            // 3. Scene-specific rendering (scene tells renderingEngine what to draw)
-            if (this.sceneManager && typeof this.sceneManager.render === 'function') {
-                this.sceneManager.render(this.renderingEngine);
-            }
-
-            // 4. Render all objects added by the scene to the RenderingEngine's list
-            this.renderingEngine.renderManagedDrawables();
-
-            // 5. Restore context to pre-camera state (for UI, debug info)
-            this.renderingEngine.context.restore();
-
-            // 6. Draw debug information (if enabled)
-            // showDebugInfo might be on engine.config or renderingEngine itself
-            const showDebug = (this.hatchConfig && this.hatchConfig.debug && this.hatchConfig.debug.showStats) ||
-                              (this.renderingEngine.showDebugInfo); // Assuming RE might have its own flag
-            if (showDebug) {
-                this.renderingEngine.drawDebugInfo();
-            }
-
-        } else if (!this.renderingEngine) {
-            // console.warnOnce('HatchEngine:_loop: this.renderingEngine is not available for rendering.');
-             // Fallback clear if no rendering engine, but this path indicates a setup issue.
-            if (this.ctx) {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            }
-        }
-
-        this.eventBus.emit(EngineEvents.RENDER, this); // Event indicating render phase is complete or ongoing
 
         requestAnimationFrame(this._loop.bind(this));
     }
