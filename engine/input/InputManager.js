@@ -232,6 +232,20 @@ class InputManager {
         return this.mouse ? this.mouse.getScrollDeltaY() : 0;
     }
 
+    /**
+     * Gets the mouse position in grid coordinates.
+     * This is a convenience method that delegates to the MouseInput instance.
+     * Requires GridManager to be set up and a camera for coordinate conversion.
+     * @returns {{x: number, y: number} | null} Grid coordinates {x, y} or null if not applicable/available.
+     */
+    getMouseGridPosition() {
+        if (this.mouse && typeof this.mouse.getMouseGridPosition === 'function') {
+            return this.mouse.getMouseGridPosition();
+        }
+        // this.engine.errorHandler.warn('InputManager: MouseInput or getMouseGridPosition method not available.', { component: 'InputManager', method: 'getMouseGridPosition' });
+        return null;
+    }
+
     // --- Gamepad Convenience Methods (Example for future expansion) ---
     // /**
     //  * Checks if a gamepad button is pressed.

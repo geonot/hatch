@@ -2,7 +2,7 @@
 
 import fs from 'fs-extra'; // fs-extra should be imported at the top
 import path from 'path';
-import { createServer } from 'vite';
+import { createServer, build as viteBuild } from 'vite';
 
 // For ES modules, __filename and __dirname are not available directly.
 // We can get __dirname from import.meta.url.
@@ -55,7 +55,9 @@ canvasId: gameCanvas
 gameWidth: 800
 gameHeight: 600
 initialScene: TestScene
-assetManifest: assets/asset-manifest.json`;
+assetManifest: assets/asset-manifest.json
+logging:
+  level: INFO`;
         await fs.writeFile(path.join(projectPath, 'hatch.config.yaml'), hatchConfigContent);
 
         const mainJsContent = `import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
@@ -67,96 +69,85 @@ import TestScene from './scenes/TestScene.js';
 
 console.log("Hatch game starting...");
 
-// Function to load and parse hatch.config.yaml
-async function loadConfig() {
+async function gameMain() {
     try {
-        const response = await fetch('/hatch.config.yaml'); // Fetches from the public root
-        if (!response.ok) {
-            throw new Error(\`HTTP error! status: \${response.status}\`);
-        }
-        const yamlText = await response.text();
-        // Simple YAML parser (can be replaced with a library later if complex features are needed)
-        const config = {};
-        yamlText.split('\\n').forEach(line => {
-            const parts = line.split(':');
-            if (parts.length === 2) {
-                config[parts[0].trim()] = parts[1].trim();
+        // Load configuration using HatchEngine's static method
+        const config = await HatchEngine.loadProjectConfig('/hatch.config.yaml');
+        if (!config) {
+            console.error("Failed to load project configuration. Cannot start the engine.");
+            // Optionally, display a user-friendly message on the page
+            const canvas = document.getElementById('gameCanvas'); // Or config.canvasId if available early
+            if (canvas && canvas.getContext) {
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.fillText('Error: Could not load game configuration.', 50, 50);
             }
-        });
-        // Convert numeric values
-        if (config.gameWidth) config.gameWidth = parseInt(config.gameWidth, 10);
-        if (config.gameHeight) config.gameHeight = parseInt(config.gameHeight, 10);
-        if (isNaN(config.gameWidth)) config.gameWidth = 800; // Default if parsing failed
-        if (isNaN(config.gameHeight)) config.gameHeight = 600; // Default if parsing failed
-        return config;
-    } catch (e) {
-        console.error("Failed to load or parse hatch.config.yaml", e);
-        // Fallback or default config
-        return {
-            projectName: 'MyHatchGame',
-            canvasId: 'gameCanvas',
-            gameWidth: 800,
-            gameHeight: 600,
-            initialScene: 'TestScene'
-            // assetManifest will be undefined, so manifest loading will be skipped or handled by AssetManager if path is null/undefined
-        };
-    }
-}
+            return;
+        }
 
-async function gameMain() { // Renamed to avoid conflict with outer 'main'
-    const hatchConfig = await loadConfig();
+        // Instantiate the engine with the loaded configuration
+        const engine = new HatchEngine(config);
 
-    const engineConfig = {
-        canvasId: hatchConfig.canvasId || 'gameCanvas',
-        width: hatchConfig.gameWidth || 800,
-        height: hatchConfig.gameHeight || 600,
-        hatchConfig: hatchConfig // Pass the full config to the engine
-    };
+        // Initialize the engine (this sets up canvas, context, etc.)
+        // It's crucial to call init() before managers that need canvas or ctx are created.
+        await engine.init(); // Assuming init can be async if it involves internal loading
 
-    const engine = new HatchEngine(engineConfig);
-
-    try {
-        engine.init(); // Sets up engine.canvas and engine.ctx
-
-        // Instantiate managers and attach to the engine instance
-        // These managers might need the engine instance for error handling, event bus, or config
+        // Instantiate managers *after* engine.init() and pass the engine instance
         engine.assetManager = new AssetManager(engine);
-        engine.inputManager = new InputManager(engine, engine.canvas); // InputManager needs canvas for event listeners
-        engine.renderingEngine = new RenderingEngine(engine.canvas, engine); // RenderingEngine needs canvas
+        engine.inputManager = new InputManager(engine, engine.canvas); // Requires engine.canvas
+        engine.renderingEngine = new RenderingEngine(engine.canvas, engine); // Requires engine.canvas
         engine.sceneManager = new SceneManager(engine);
 
         // Load asset manifest if specified in config
-        if (hatchConfig.assetManifest && engine.assetManager) {
+        // Ensure assetManager is available and manifest path is provided
+        if (config.assetManifest && engine.assetManager) {
             try {
-                // AssetManager.loadManifest now supports string paths directly
-                await engine.assetManager.loadManifest(hatchConfig.assetManifest);
-                console.log(\`Asset manifest '\${hatchConfig.assetManifest}' loaded or loading initiated.\`);
+                await engine.assetManager.loadManifest(config.assetManifest);
+                console.log(\`Asset manifest '\${config.assetManifest}' loaded or loading initiated.\`);
             } catch (e) {
                 console.error("Failed to load asset manifest:", e);
-                engine.errorHandler.error("Failed to load asset manifest", { path: hatchConfig.assetManifest, error: e });
+                if (engine.errorHandler) { // Check if errorHandler is available
+                    engine.errorHandler.error("Failed to load asset manifest", { path: config.assetManifest, error: e });
+                }
             }
         }
 
         // Add and switch to the initial scene
-        if (engine.sceneManager && TestScene) {
-            engine.sceneManager.add(hatchConfig.initialScene || 'TestScene', new TestScene(engine));
-            await engine.sceneManager.switchTo(hatchConfig.initialScene || 'TestScene');
-            console.log(\`Switched to initial scene: \${hatchConfig.initialScene || 'TestScene'}\`);
+        // Ensure sceneManager and TestScene are available
+        if (engine.sceneManager && TestScene && config.initialScene) {
+            engine.sceneManager.add(config.initialScene, new TestScene(engine)); // Pass engine to TestScene
+            await engine.sceneManager.switchTo(config.initialScene);
+            console.log(\`Switched to initial scene: \${config.initialScene}\`);
         } else {
-            const missingComponent = !engine.sceneManager ? "SceneManager" : "TestScene";
-            engine.errorHandler.critical(\`Failed to initialize scenes: \${missingComponent} is not available.\`);
+            const missingComponent = !engine.sceneManager ? "SceneManager"
+                                    : !TestScene ? "TestScene"
+                                    : "initialScene configuration";
+            const errorMessage = \`Failed to initialize scenes: \${missingComponent} is not available or configured.\`;
+            console.error(errorMessage);
+            if (engine.errorHandler) { // Check if errorHandler is available
+                 engine.errorHandler.critical(errorMessage);
+            }
             return; // Stop if scene setup cannot proceed
         }
 
-        console.log("Engine initialized from main.js with managers and scene.");
+        console.log("Engine initialized, starting game loop.");
         engine.start();
 
     } catch (error) {
-        console.error("Error during engine initialization or start:", error);
-        if (engine && engine.errorHandler) {
-            engine.errorHandler.critical("Failed to initialize or start engine from main.js", { originalError: error });
+        console.error("Error during game initialization or start:", error);
+        // Attempt to use engine's error handler if available, otherwise rethrow or log
+        if (typeof engine !== 'undefined' && engine && engine.errorHandler) {
+            engine.errorHandler.critical("Failed to initialize or start game from main.js", { originalError: error });
         } else {
-            throw error;
+            // Fallback if engine or errorHandler is not initialized
+            const canvas = document.getElementById('gameCanvas'); // Attempt to get canvas ID from a common default
+            if (canvas && canvas.getContext) {
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'red';
+                ctx.font = '16px Arial';
+                ctx.fillText('Critical Error: Game cannot start. Check console for details.', 50, 100);
+            }
         }
     }
 }
@@ -183,11 +174,11 @@ gameMain();`;
 //         // console.log('TestScene update', deltaTime);
 //     }
 
-import { Scene } from 'hatch-engine/scenes/Scene.js'; // Adjust path if needed
+import { Scene } from 'hatch-engine/scenes/Scene.js';
 
 export default class TestScene extends Scene {
-    constructor(engine) { // Scene constructor expects engine
-        super(engine);
+    constructor(engine) {
+        super(engine); // Correctly calls super with the engine instance
     }
 
     load() {
@@ -290,6 +281,56 @@ export default class TestScene extends Scene {
 
       } catch (e) {
         console.error('Failed to start dev server:', e);
+        process.exit(1);
+      }
+    })
+    .command('build', 'Build the project for production', (yargs) => {
+      return yargs.option('outDir', {
+        alias: 'o',
+        type: 'string',
+        description: 'Output directory for the build',
+        default: 'dist'
+      });
+    }, async (argv) => {
+      const projectRoot = process.cwd();
+      const outputDir = path.resolve(projectRoot, argv.outDir);
+      console.log(`Starting production build for project at: ${projectRoot}`);
+      console.log(`Output directory: ${outputDir}`);
+
+      try {
+        const assetsDir = path.join(projectRoot, 'assets');
+        const publicDir = await fs.pathExists(assetsDir) ? 'assets' : undefined;
+
+        if (publicDir) {
+          console.log(`Using public directory: ${publicDir}`);
+        } else {
+          console.log('No "assets" directory found, proceeding without publicDir.');
+        }
+
+        await viteBuild({
+          root: projectRoot,
+          publicDir: publicDir,
+          build: {
+            outDir: outputDir,
+            emptyOutDir: true,
+            rollupOptions: {
+              // Assuming index.html is the entry point.
+              // If specific JS entry points are needed, they can be configured here.
+              // input: {
+              //   main: path.resolve(projectRoot, 'index.html')
+              // }
+            },
+          },
+          resolve: {
+            alias: {
+              'hatch-engine': path.resolve(__dirname, '../engine')
+            }
+          },
+          // Optional: Add plugins or other Vite configurations as needed
+        });
+        console.log(`Build successful. Output generated in ${outputDir}`);
+      } catch (e) {
+        console.error('Build failed:', e);
         process.exit(1);
       }
     })

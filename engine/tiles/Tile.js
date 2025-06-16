@@ -28,6 +28,7 @@
  * @property {string | null} color - A fallback CSS color string used to render the tile if no sprite is available
  *                                or if the sprite is not visible. Set to `null` if a sprite is provided.
  * @property {boolean} visible - Whether the tile (and its sprite, if any) should be rendered. Defaults to `true`.
+ * @property {number} zIndex - The rendering order of the tile. Higher values are drawn on top. Default is 0.
  */
 class Tile {
     /**
@@ -46,6 +47,7 @@ class Tile {
      * @param {string} [options.color='magenta'] - Fallback CSS color string if no sprite is used or if the sprite is not visible.
      *        'magenta' is often used as a placeholder to indicate a missing or failed texture/sprite.
      * @param {boolean} [options.visible=true] - Whether the tile is initially visible.
+ * @param {number} [options.zIndex=0] - The z-index for rendering order.
      */
     constructor({
         type,
@@ -55,7 +57,8 @@ class Tile {
         data = {},
         sprite = null,
         color = 'magenta',
-        visible = true
+        visible = true,
+        zIndex = 0
     }) {
         if (typeof type !== 'string' || type.trim() === '') {
             throw new TypeError("Tile constructor: 'type' must be a non-empty string.");
@@ -103,6 +106,7 @@ class Tile {
         } else {
             this.visible = visible;
         }
+        this.zIndex = (typeof zIndex === 'number') ? zIndex : 0;
 
         // It's crucial that tile sprites have their anchor at (0,0) if their
         // position is set to the tile's top-left world coordinates.
@@ -128,17 +132,22 @@ class Tile {
             return;
         }
 
+        // The zIndex property of the Tile itself is used by the RenderingEngine for sorting.
+        // If the tile has its own sprite, that sprite's zIndex is not separately considered by RE's main sort,
+        // but it *could* be used for sub-sorting if a Tile's render method drew multiple sprites.
+        // For now, the Tile's zIndex dictates its draw order.
+
         if (this.sprite && this.sprite.visible) {
             // Ensure the sprite is positioned at the tile's world coordinates for this render call.
-            // This is important if the tile or sprite can move independently or if the sprite
-            // instance is shared and re-positioned.
             this.sprite.setPosition(this.worldX, this.worldY);
+            // If the sprite itself should inherit the tile's zIndex, or if it's managed separately:
+            // For now, we assume the tile's zIndex is the primary one.
+            // If sprite.zIndex were to be used, it would need to be set when the sprite is created/assigned.
+            // this.sprite.zIndex = this.zIndex; // This might be an option if sprites are directly in RE's list
             this.sprite.render(ctx);
         } else if (this.color) {
             ctx.fillStyle = this.color;
             ctx.fillRect(this.worldX, this.worldY, this.width, this.height);
-            // Note: If using this direct render method, RenderingEngine draw call stats are not automatically updated
-            // by this fillRect call itself. If stat tracking is important, use renderingEngine.drawRect().
         }
     }
 
