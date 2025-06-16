@@ -9,45 +9,47 @@
  * @class Scene
  * @classdesc Base class for creating game scenes. Defines the lifecycle methods
  * that are called by the `SceneManager` during the game. Subclasses should override
- * these methods to implement scene-specific behavior.
+ * these methods to implement scene-specific behavior, such as loading assets,
+ * initializing game objects, handling updates, and rendering.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the HatchEngine instance.
- * @property {import('../assets/AssetManager.js').default} assetManager - Convenience accessor for the engine's AssetManager.
- * @property {import('../input/InputManager.js').default} inputManager - Convenience accessor for the engine's InputManager.
- * @property {import('../rendering/RenderingEngine.js').default} renderingEngine - Convenience accessor for the engine's RenderingEngine.
- * @property {import('./SceneManager.js').default} sceneManager - Convenience accessor for the engine's SceneManager.
- * @property {import('../core/EventBus.js').default} eventBus - Convenience accessor for the engine's EventBus.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine instance, providing access to all core systems.
+ * @property {import('../assets/AssetManager.js').AssetManager} assetManager - Convenience accessor for `this.engine.assetManager`.
+ * @property {import('../input/InputManager.js').InputManager} inputManager - Convenience accessor for `this.engine.inputManager`.
+ * @property {import('../rendering/RenderingEngine.js').RenderingEngine} renderingEngine - Convenience accessor for `this.engine.renderingEngine`.
+ * @property {import('./SceneManager.js').SceneManager} sceneManager - Convenience accessor for `this.engine.sceneManager`.
+ * @property {import('../core/EventBus.js').EventBus} eventBus - Convenience accessor for `this.engine.eventBus`.
  */
 class Scene {
     /**
      * Creates an instance of Scene.
-     * @param {import('../core/HatchEngine.js').default} engine - A reference to the HatchEngine instance.
-     *        This provides access to all engine subsystems.
-     * @throws {Error} If an engine instance is not provided.
+     * @param {import('../core/HatchEngine.js').HatchEngine} engine - A reference to the HatchEngine instance.
+     *        This provides access to all engine subsystems like AssetManager, InputManager, etc.
+     * @throws {Error} If an `engine` instance is not provided to the constructor.
      */
     constructor(engine) {
         if (!engine) {
+            // This error is critical for scene operation.
             throw new Error("Scene constructor: An 'engine' instance is required.");
         }
-        /** @type {import('../core/HatchEngine.js').default} */
+        /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
-        /** @type {import('../assets/AssetManager.js').default} */
+        /** @type {import('../assets/AssetManager.js').AssetManager} */
         this.assetManager = engine.assetManager;
-        /** @type {import('../input/InputManager.js').default} */
+        /** @type {import('../input/InputManager.js').InputManager} */
         this.inputManager = engine.inputManager;
-        /** @type {import('../rendering/RenderingEngine.js').default} */
+        /** @type {import('../rendering/RenderingEngine.js').RenderingEngine} */
         this.renderingEngine = engine.renderingEngine;
-        /** @type {import('./SceneManager.js').default} */
+        /** @type {import('./SceneManager.js').SceneManager} */
         this.sceneManager = engine.sceneManager;
-        /** @type {import('../core/EventBus.js').default} */
+        /** @type {import('../core/EventBus.js').EventBus} */
         this.eventBus = engine.eventBus;
 
-        // console.log(`Scene: '${this.constructor.name}' constructed.`);
+        // Example: this.engine.errorHandler.info(`Scene '${this.constructor.name}' constructed.`, { component: 'Scene', method: 'constructor' });
     }
 
     /**
-     * Convenience accessor for the engine's camera.
-     * @type {import('../rendering/Camera.js').default | null}
+     * Convenience read-only accessor for the engine's main camera.
+     * @type {import('../rendering/Camera.js').Camera | null}
      * @readonly
      */
     get camera() {
@@ -55,8 +57,8 @@ class Scene {
     }
 
     /**
-     * Convenience accessor for the loaded project configuration (from hatch.config.yaml).
-     * @type {Object | null}
+     * Convenience read-only accessor for the loaded project configuration object (`hatch.config.yaml`).
+     * @type {object | null}
      * @readonly
      */
     get hatchConfig() {
@@ -64,88 +66,126 @@ class Scene {
     }
 
     /**
-     * Asynchronous method called by the SceneManager when the scene is being prepared to be shown.
-     * Subclasses should override this to load any assets specific to this scene
-     * using `this.assetManager.loadAsset()` or `this.assetManager.loadManifest()`.
+     * Asynchronous method called by the SceneManager when this scene is about to become active,
+     * before `init()` and `enter()`. Subclasses should override this to load any assets specific
+     * to this scene using `this.assetManager.loadAsset()` or `this.assetManager.loadManifest()`.
      * The `SceneManager` will wait for the promise returned by this method to resolve
-     * before proceeding to `init()`.
+     * before proceeding with the scene transition.
      *
      * @async
      * @returns {Promise<void>} A promise that resolves when all scene-specific assets are loaded.
+     *                          If an error occurs during loading, it should be thrown and will be
+     *                          caught by the SceneManager, potentially halting the scene switch.
+     * @example
+     * async load() {
+     *   await this.assetManager.loadAsset({ name: 'playerSprite', path: 'path/to/player.png', type: AssetTypes.IMAGE });
+     *   this.engine.errorHandler.info("MyScene assets loaded.", { component: this.constructor.name, method: "load" });
+     * }
      */
     async load() {
-        // Example: console.log(`Scene '${this.constructor.name}': load() called.`);
-        // await this.assetManager.loadAsset({name: 'myImage', path: 'path/to/image.png', type: 'image'});
+        // Intended to be overridden by subclasses.
     }
 
     /**
-     * Called by the SceneManager after `load()` has completed and before `enter()`.
-     * This method is intended for setting up the initial state of the scene,
-     * creating game objects, initializing variables, etc., based on loaded assets
-     * and any arguments passed during the scene switch.
+     * Called by the SceneManager after `load()` has completed successfully and before `enter()`.
+     * This method is intended for synchronous setup of the scene's initial state,
+     * such as creating game objects, initializing variables, setting up UI elements, etc.,
+     * based on loaded assets and any arguments passed during the scene switch.
      *
      * @param {...any} args - Arguments passed from `SceneManager.switchTo()` to this scene.
+     * @example
+     * init(levelData) {
+     *   this.player = new Player(this.engine, levelData.playerStartPos);
+     *   this.score = 0;
+     *   this.engine.errorHandler.info(`MyScene initialized with level: ${levelData.name}`, { component: this.constructor.name, method: "init" });
+     * }
      */
     init(...args) {
-        // Example: console.log(`Scene '${this.constructor.name}': init() called with args:`, args);
+        // Intended to be overridden by subclasses.
     }
 
     /**
-     * Called by the SceneManager when this scene becomes the active scene and is about to be displayed.
-     * This is the place for any final setup before the first `update()` and `render()` calls,
-     * such as starting scene-specific timers, playing intro animations, or resetting UI elements.
+     * Called by the SceneManager when this scene becomes the active scene and is about to be displayed,
+     * after `load()` and `init()` have completed. This is the place for any final setup that might
+     * involve starting animations, playing introductory music, or resetting UI states just before
+     * the first `update()` and `render()` calls.
+     * Can be asynchronous if needed (e.g., waiting for an intro animation to complete).
+     *
+     * @async
+     * @returns {Promise<void>} A promise that resolves when entry logic is complete.
+     * @example
+     * async enter() {
+     *   this.uiManager.showHUD();
+     *   await this.soundManager.playMusic('background_theme');
+     *   this.engine.errorHandler.info("MyScene entered.", { component: this.constructor.name, method: "enter" });
+     * }
      */
-    enter() {
-        // Example: console.log(`Scene '${this.constructor.name}': enter() called.`);
+    async enter() {
+        // Intended to be overridden by subclasses.
     }
 
     /**
-     * Called by the SceneManager when this scene is about to be deactivated (e.g., when switching to another scene).
-     * This method should be used for any cleanup that needs to occur before the scene is no longer active,
-     * such as pausing animations, saving state, or stopping scene-specific sounds.
+     * Called by the SceneManager when this scene is about to be deactivated (e.g., when switching
+     * to another scene or when the engine is stopping). This method should be used for any cleanup
+     * that needs to occur before the scene is no longer active, such as pausing animations,
+     * saving state, or stopping scene-specific sounds.
+     * Can be asynchronous if needed.
+     *
+     * @async
+     * @returns {Promise<void>} A promise that resolves when exit logic is complete.
+     * @example
+     * async exit() {
+     *   await this.soundManager.stopMusic();
+     *   this.saveGameProgress();
+     *   this.engine.errorHandler.info("MyScene exited.", { component: this.constructor.name, method: "exit" });
+     * }
      */
-    exit() {
-        // Example: console.log(`Scene '${this.constructor.name}': exit() called.`);
+    async exit() {
+        // Intended to be overridden by subclasses.
     }
 
     /**
      * Called every frame by the SceneManager for the active scene.
-     * This is where game logic, physics updates, AI, and other per-frame updates for the scene should occur.
+     * This is where game logic, physics updates, AI, input handling, and other
+     * per-frame updates for the scene should occur.
      *
      * @param {number} deltaTime - The time elapsed since the last frame, in seconds.
-     *                             Used for frame-rate independent calculations.
+     *                             This should be used for frame-rate independent calculations
+     *                             (e.g., `velocity * deltaTime`).
      */
     update(deltaTime) {
-        // Example: console.log(`Scene '${this.constructor.name}': update(${deltaTime}) called.`);
+        // Intended to be overridden by subclasses.
     }
 
     /**
      * Called every frame by the SceneManager for the active scene, after `update()`.
      * This method is responsible for preparing the scene to be drawn. Typically, this involves
-     * adding drawable objects (like Sprites, Tile instances, UI elements) to the
-     * `RenderingEngine`'s list of drawables for the current frame using `renderingEngine.add(myDrawableObject)`.
-     * The actual drawing is then handled by `RenderingEngine.renderManagedDrawables()`.
+     * adding drawable game objects (like Sprites, Tilemaps, UI elements) to the
+     * `RenderingEngine`'s list of drawables for the current frame using
+     * `renderingEngine.add(myDrawableObject)`. The actual drawing to the canvas
+     * is then handled by `RenderingEngine.renderManagedDrawables()`.
      *
-     * @param {import('../rendering/RenderingEngine.js').default} renderingEngine - The engine's rendering manager.
-     *        Scene uses this to add its drawable objects to the current frame's render queue.
+     * @param {import('../rendering/RenderingEngine.js').RenderingEngine} renderingEngine - The engine's rendering manager.
+     *        The scene uses this to add its drawable objects to the current frame's render queue.
      */
     render(renderingEngine) {
+        // Intended to be overridden by subclasses.
         // Example:
-        // if (this.playerSprite) {
-        //     renderingEngine.add(this.playerSprite);
-        // }
-        // this.tileManager.renderTiles(renderingEngine); // If using a tile manager
+        // if (this.player) renderingEngine.add(this.player);
+        // if (this.tileMap) renderingEngine.add(this.tileMap);
     }
 
     /**
-     * Called by the SceneManager when the scene is being permanently removed or the game is shutting down.
+     * Called by the SceneManager when the scene is being permanently removed (e.g., if a scene
+     * instance is replaced via `SceneManager.add` with the same name) or when the game engine
+     * is shutting down and needs to clean up all scenes.
      * This method should be used for final cleanup of all resources held by the scene,
-     * such as detaching event listeners, clearing object pools, or nullifying references
+     * such as detaching global event listeners, clearing object pools, or nullifying references
      * to prevent memory leaks.
      */
     destroy() {
-        // Example: console.log(`Scene '${this.constructor.name}': destroy() called.`);
-        // this.eventBus.off('someEvent', this._myEventHandler); // Example of cleaning up specific listeners
+        // Intended to be overridden by subclasses.
+        // Example: this.engine.errorHandler.info(`Scene '${this.constructor.name}' destroyed.`, { component: this.constructor.name, method: "destroy" });
     }
 }
 

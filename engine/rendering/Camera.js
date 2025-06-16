@@ -11,31 +11,30 @@
  * @classdesc Represents a 2D camera that controls the view of the game world.
  * It allows for panning (changing x, y coordinates) and zooming.
  *
- * @property {number} x - The world x-coordinate the camera is centered on.
- * @property {number} y - The world y-coordinate the camera is centered on.
- * @property {number} zoom - The zoom level of the camera. 1 is normal zoom, >1 zooms in, <1 zooms out.
- * @property {number} viewportWidth - The width of the camera's viewport (typically canvas logical width).
- * @property {number} viewportHeight - The height of the camera's viewport (typically canvas logical height).
+ * @property {number} x - The world x-coordinate the camera is centered on. Default is 0.
+ * @property {number} y - The world y-coordinate the camera is centered on. Default is 0.
+ * @property {number} zoom - The zoom level of the camera. 1.0 is normal zoom.
+ *                           Values > 1.0 zoom in, values < 1.0 zoom out. Must be positive. Default is 1.0.
+ * @property {number} viewportWidth - The width of the camera's viewport in logical pixels (typically matches canvas logical width).
+ * @property {number} viewportHeight - The height of the camera's viewport in logical pixels (typically matches canvas logical height).
  */
 class Camera {
     /**
      * Creates an instance of Camera.
-     * @param {number} viewportWidth - The width of the viewport (e.g., canvas.width).
-     *                                 This is the logical width, not necessarily the styled CSS width.
-     * @param {number} viewportHeight - The height of the viewport (e.g., canvas.height).
-     *                                  This is the logical height.
+     * @param {number} viewportWidth - The width of the viewport in logical pixels (e.g., canvas.width).
+     * @param {number} viewportHeight - The height of the viewport in logical pixels (e.g., canvas.height).
      */
     constructor(viewportWidth, viewportHeight) {
         /** @type {number} World x-coordinate of the camera's center. */
         this.x = 0;
         /** @type {number} World y-coordinate of the camera's center. */
         this.y = 0;
-        /** @type {number} Zoom level. Must be positive. Defaults to 1. */
+        /** @type {number} Zoom level. Must be positive. */
         this.zoom = 1;
 
-        /** @type {number} Width of the camera's viewport. */
+        /** @type {number} Width of the camera's viewport in logical pixels. */
         this.viewportWidth = viewportWidth;
-        /** @type {number} Height of the camera's viewport. */
+        /** @type {number} Height of the camera's viewport in logical pixels. */
         this.viewportHeight = viewportHeight;
     }
 
@@ -47,14 +46,13 @@ class Camera {
      * 1. Translate to the center of the viewport.
      * 2. Scale by the zoom level.
      * 3. Translate by the negative of the camera's world position.
-     * This makes `(camera.x, camera.y)` in world space appear at the center of the screen.
+     * This makes the world point `(camera.x, camera.y)` appear at the center of the viewport.
      *
-     * @param {CanvasRenderingContext2D} ctx - The rendering context to transform.
+     * @param {CanvasRenderingContext2D} ctx - The 2D rendering context to transform.
      */
     applyTransform(ctx) {
         ctx.translate(this.viewportWidth / 2, this.viewportHeight / 2);
-        // Ensure zoom is positive before scaling to prevent errors or inverted rendering
-        const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom; // Prevent zero or negative zoom
+        const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom; // Prevent zero, negative, or extremely small zoom
         ctx.scale(currentZoom, currentZoom);
         ctx.translate(-this.x, -this.y);
     }
@@ -106,19 +104,17 @@ class Camera {
     /**
      * Checks if a rectangle (defined in world coordinates) is potentially within the camera's view.
      * This is a basic Axis-Aligned Bounding Box (AABB) check and does not perform perfect culling
-     * for rotated objects or more complex shapes. It's a placeholder for more advanced culling.
+     * for rotated objects or more complex shapes.
      *
-     * @param {Object} rect - An object representing the rectangle.
+     * @param {object} rect - An object representing the rectangle in world coordinates.
      * @param {number} rect.x - The world x-coordinate of the rectangle's top-left corner.
      * @param {number} rect.y - The world y-coordinate of the rectangle's top-left corner.
-     * @param {number} rect.width - The width of the rectangle.
-     * @param {number} rect.height - The height of the rectangle.
+     * @param {number} rect.width - The width of the rectangle in world units.
+     * @param {number} rect.height - The height of the rectangle in world units.
      * @returns {boolean} True if the rectangle is (or might be) in view, false otherwise.
-     *                    Currently, always returns true as it's a placeholder.
      */
     isRectInView({ x, y, width, height }) {
-        // More accurate culling (still AABB):
-        const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom; // Prevent zero or negative zoom
+        const currentZoom = this.zoom <= 0 ? 0.01 : this.zoom;
         const viewHalfWidth = (this.viewportWidth / 2) / currentZoom;
         const viewHalfHeight = (this.viewportHeight / 2) / currentZoom;
         const viewLeft = this.x - viewHalfWidth;
@@ -149,12 +145,13 @@ class Camera {
 
     /**
      * Sets the camera's zoom level.
-     * @param {number} zoomLevel - The new zoom level. Must be a positive number.
+     * @param {number} zoomLevel - The new zoom level. Must be a positive number to be applied.
      */
     setZoom(zoomLevel) {
         if (zoomLevel > 0) {
             this.zoom = zoomLevel;
         } else {
+            // This warning is acceptable for a direct utility function like this.
             console.warn("Camera.setZoom: Zoom level must be positive.");
         }
     }

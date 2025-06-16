@@ -7,39 +7,48 @@
 /**
  * @class SceneManager
  * @classdesc Responsible for managing different game scenes. It holds references to all
- * added scenes and controls which scene is currently active. It ensures that
- * scene lifecycle methods are called appropriately during transitions and game loop execution.
+ * added scenes (or their constructors) and controls which scene is currently active.
+ * It ensures that scene lifecycle methods (`load`, `init`, `enter`, `exit`, `destroy`)
+ * are called appropriately during transitions and game loop execution.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the HatchEngine instance.
- * @property {Map<string, import('./Scene.js').default>} scenes - A map storing scene instances, keyed by their unique names.
- * @property {?import('./Scene.js').default} currentScene - The currently active scene instance.
- * @property {?string} currentSceneName - The name of the currently active scene.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine instance.
+ * @property {Map<string, import('./Scene.js').Scene | Function>} scenes - A map storing scene instances or scene constructors,
+ *                                                                    keyed by their unique names.
+ * @property {import('./Scene.js').Scene | null} currentScene - The currently active scene instance, or null if no scene is active.
+ * @property {string | null} currentSceneName - The name of the currently active scene, or null.
  */
+import { SceneEvents } from '../core/Constants.js';
+
 class SceneManager {
     /**
      * Creates an instance of SceneManager.
-     * @param {import('../core/HatchEngine.js').default} engine - A reference to the HatchEngine instance.
-     *        Required for accessing other engine systems like ErrorHandler, EventBus, and RenderingEngine.
+     * @param {import('../core/HatchEngine.js').HatchEngine} engine - A reference to the HatchEngine instance.
+     *        This provides access to other engine systems like ErrorHandler, EventBus, and RenderingEngine.
      */
     constructor(engine) {
-        /** @type {import('../core/HatchEngine.js').default} */
+        /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
-        /** @type {Map<string, import('./Scene.js').default>} Stores scene instances by name. */
+        /** @type {Map<string, import('./Scene.js').Scene | Function>} */
         this.scenes = new Map();
-        /** @type {?import('./Scene.js').default} The active scene. */
+        /** @type {import('./Scene.js').Scene | null} */
         this.currentScene = null;
-        /** @type {?string} Name of the active scene. */
+        /** @type {string | null} */
         this.currentSceneName = null;
-        console.log("SceneManager: Initialized.");
+        // console.log("SceneManager: Initialized."); // Debug log, consider using ErrorHandler.info
+        this.engine.errorHandler.info("SceneManager Initialized.", { component: "SceneManager", method: "constructor" });
     }
 
     /**
      * Adds a scene to the manager. The scene can be an instance of a class that extends
-     * `HatchEngine.Scene` or a class constructor that extends `HatchEngine.Scene`.
-     * If a class is provided, it will be instantiated by `switchTo` when first accessed.
+     * `HatchEngine.Scene` (or the configured `engine.SceneClass`) or a class constructor that extends it.
+     * If a class constructor is provided, it will be instantiated with `new SceneClass(this.engine)`
+     * when `switchTo` is called for that scene name for the first time.
+     * If a scene with the same name already exists, the old scene (if an instance) will be destroyed
+     * before the new one is added.
+     *
      * @param {string} name - The unique name for the scene (e.g., 'mainMenu', 'level1').
-     * @param {import('./Scene.js').default | Function} sceneClassOrInstance - An instance or constructor of a scene class.
-     * @throws {TypeError} If `sceneClassOrInstance` is not a valid Scene instance or Scene constructor.
+     * @param {import('./Scene.js').Scene | Function} sceneClassOrInstance - An instance of a Scene subclass,
+     *                                                                       or a constructor for a Scene subclass.
      */
     add(name, sceneClassOrInstance) {
         let isValid = false;
@@ -54,9 +63,15 @@ class SceneManager {
         }
 
         if (!isValid) {
-            const errorMsg = `SceneManager.add: Attempted to add object for name '${name}' which is not a valid Scene instance or Scene constructor.`;
-            console.error(errorMsg, sceneClassOrInstance);
-            this.engine.errorHandler.handle(new TypeError(errorMsg), { context: 'SceneManager.add', sceneName: name, providedValue: sceneClassOrInstance });
+            const errorMsg = `Attempted to add object which is not a valid Scene instance or Scene constructor.`;
+            // console.error is kept here as the original instruction was about standardizing errorObject for ErrorHandler calls.
+            // This specific console.error is outside an ErrorHandler call.
+            console.error(`SceneManager.add: ${errorMsg} for name '${name}'. Provided:`, sceneClassOrInstance);
+            this.engine.errorHandler.error(errorMsg, {
+                component: 'SceneManager',
+                method: 'add.validation',
+                params: { name, providedType: typeof sceneClassOrInstance }
+            });
             return;
         }
 
@@ -69,8 +84,13 @@ class SceneManager {
                     oldEntry.destroy();
                 } catch (e) {
                     this.engine.errorHandler.error(
-                        `SceneManager.add: Error while destroying old scene instance '${name}'.`,
-                        { context: 'SceneManager.add.destroyOldScene', sceneName: name, originalError: e }
+                        `Error while destroying old scene instance '${name}'.`,
+                        {
+                            component: 'SceneManager',
+                            method: 'add.destroyOldScene',
+                            params: { name },
+                            originalError: e
+                        }
                     );
                 }
             } else {
@@ -99,116 +119,173 @@ class SceneManager {
      * Errors during any critical lifecycle method of the new scene will be handled and may prevent the switch.
      *
      * @param {string} name - The name of the scene to switch to. Must have been previously added.
+     * @param {string} name - The name of the scene to switch to. Must have been previously added via `add()`.
      * @param {...any} args - Arguments to pass to the new scene's `init()` method.
-     * @returns {Promise<void>} A promise that resolves when the scene switch is complete, or rejects if it fails.
+     * @returns {Promise<void>} A promise that resolves when the scene switch is complete.
+     *                          If a critical error occurs during the switch (e.g., scene not found, instantiation failure,
+     *                          critical lifecycle method failure), `ErrorHandler.critical` will be called, which typically throws.
+     *                          The promise may not resolve or reject in such cases if execution is halted.
      * @async
-     * @throws {Error} If the scene `name` is not found, or if `load`, `init`, or `enter` methods of the new scene throw an error.
      */
-    async switchTo(name, ...args) {
-        let newSceneEntry = this.scenes.get(name);
-        let newScene;
-
-        if (!newSceneEntry) {
-            const error = new Error(`SceneManager.switchTo: Scene or scene class "${name}" not found.`);
-            // .handle with critical:true is expected to call .critical, which throws.
-            this.engine.errorHandler.handle(error, { context: 'SceneManager.switchTo', sceneName: name, originalError: error }, true);
-            // If errorHandler.handle didn't throw, the error would be swallowed.
-            // Assuming critical path in errorHandler always throws.
-            return; // Should not be reached if critical error is thrown. Added for logical clarity.
+    _validateAndRetrieveScene(name) {
+        const sceneEntry = this.scenes.get(name);
+        if (!sceneEntry) {
+            this.engine.errorHandler.critical(`Scene or scene class "${name}" not found. Cannot switch.`, {
+                component: 'SceneManager',
+                method: '_validateAndRetrieveScene',
+                params: { name }
+            });
+            return null;
         }
+        return sceneEntry;
+    }
 
-        if (typeof newSceneEntry === 'function') { // It's a class, needs instantiation
-            console.log(`SceneManager.switchTo: Instantiating scene class for '${name}'.`);
+    /**
+     * Instantiates a scene if the provided entry is a class constructor.
+     * If it's already an instance, it returns the instance directly.
+     * Updates the internal `scenes` map to store the instance if a class was instantiated.
+     * @param {import('./Scene.js').Scene | Function} sceneEntry - The scene class constructor or an instance.
+     * @param {string} name - The name of the scene, used for logging and map updates.
+     * @returns {import('./Scene.js').Scene | null} The scene instance, or `null` if instantiation failed.
+     * @private
+     */
+    _instantiateSceneIfNeeded(sceneEntry, name) {
+        if (typeof sceneEntry === 'function') { // It's a class
+            this.engine.errorHandler.info(`Instantiating scene class for '${name}'.`, { component: 'SceneManager', method: '_instantiateSceneIfNeeded', params: {name}});
             try {
-                const sceneInstance = new newSceneEntry(this.engine);
-                if (!(sceneInstance instanceof this.engine.Scene)) {
-                     throw new TypeError(`Instantiated scene for '${name}' is not an instance of engine.Scene.`);
+                const sceneInstance = new sceneEntry(this.engine);
+                if (!(sceneInstance instanceof this.engine.Scene)) { // Check against the potentially overridden Scene class
+                    throw new TypeError(`Instantiated scene for '${name}' is not an instance of the configured Scene class.`);
                 }
-                this.scenes.set(name, sceneInstance); // Replace class with instance in the map
-                newScene = sceneInstance;
-                console.log(`SceneManager.switchTo: Scene '${name}' instantiated from class.`);
+                this.scenes.set(name, sceneInstance); // Replace class with instance
+                this.engine.errorHandler.info(`Scene '${name}' instantiated from class.`, { component: 'SceneManager', method: '_instantiateSceneIfNeeded', params: {name}});
+                return sceneInstance;
             } catch (instantiationError) {
                 this.engine.errorHandler.critical(
-                    `SceneManager.switchTo: Failed to instantiate scene class for '${name}'. Error: ${instantiationError.message}`,
-                    { context: 'SceneManager.switchTo.instantiation', sceneName: name, originalError: instantiationError }
+                    `Failed to instantiate scene class for '${name}'. Error: ${instantiationError.message}`, {
+                        component: 'SceneManager',
+                        method: '_instantiateSceneIfNeeded',
+                        params: { name },
+                        originalError: instantiationError
+                    }
                 );
-                return; // Stop if instantiation fails
+                return null;
             }
-        } else { // It's already an instance
-            newScene = newSceneEntry;
         }
+        return sceneEntry; // Already an instance
+    }
 
-        if (!newScene) { // Should not happen if logic above is correct, but as a safeguard
-            const error = new Error(`SceneManager.switchTo: Scene "${name}" could not be resolved to an instance.`);
-            this.engine.errorHandler.critical(error.message, { context: 'SceneManager.switchTo.resolveInstance', sceneName: name });
-            return;
-        }
-
-
+    /**
+     * Handles exiting the current scene, if one is active.
+     * This includes calling its `exit()` method and clearing drawables from the rendering engine.
+     * @returns {Promise<void>}
+     * @private
+     * @async
+     */
+    async _exitCurrentScene() {
         if (this.currentScene && typeof this.currentScene.exit === 'function') {
             try {
-                console.log(`SceneManager: Exiting scene '${this.currentSceneName}'.`);
-                this.currentScene.exit();
+                this.engine.errorHandler.info(`Exiting scene '${this.currentSceneName}'.`, { component: 'SceneManager', method: '_exitCurrentScene', params: { sceneName: this.currentSceneName }});
+                await this.currentScene.exit();
             } catch (e) {
-                 this.engine.errorHandler.handle(e, { context: `SceneManager.currentScene.exit (${this.currentSceneName})`});
-                 // Continue switching even if exit fails, but log it.
+                this.engine.errorHandler.error(
+                    `Error during exit of scene '${this.currentSceneName}'. Scene switch will continue.`, {
+                        component: 'SceneManager',
+                        method: '_exitCurrentScene',
+                        params: { sceneName: this.currentSceneName },
+                        originalError: e
+                    }
+                );
             }
         }
-
         if (this.engine.renderingEngine) {
             this.engine.renderingEngine.clearDrawables();
         }
+    }
+
+    /**
+     * Manages the loading and initialization lifecycle (`load`, `init`, `enter`) for a new scene.
+     * If any of these critical steps fail, it attempts to destroy the failed scene.
+     * @param {import('./Scene.js').Scene} scene - The scene instance to load and initialize.
+     * @param {string} name - The name of the scene.
+     * @param {any[]} args - Arguments to pass to the scene's `init()` method.
+     * @returns {Promise<boolean>} True if all lifecycle methods completed successfully, false otherwise.
+     * @private
+     * @async
+     */
+    async _loadAndInitializeScene(scene, name, args) {
+        try {
+            if (typeof scene.load === 'function') {
+                this.engine.errorHandler.info(`Loading assets for scene '${name}'.`, { component: 'SceneManager', method: '_loadAndInitializeScene', params: { sceneName: name, phase: 'load' }});
+                await scene.load();
+            }
+            if (typeof scene.init === 'function') {
+                this.engine.errorHandler.info(`Initializing scene '${name}'.`, { component: 'SceneManager', method: '_loadAndInitializeScene', params: { sceneName: name, phase: 'init' }});
+                scene.init(...args);
+            }
+            if (typeof scene.enter === 'function') {
+                this.engine.errorHandler.info(`Entering scene '${name}'.`, { component: 'SceneManager', method: '_loadAndInitializeScene', params: { sceneName: name, phase: 'enter' }});
+                await scene.enter();
+            }
+            return true;
+        } catch (error) {
+            this.engine.errorHandler.critical(
+                `Critical failure during lifecycle (load/init/enter) of new scene '${name}'. Original error: ${error.message}`, {
+                    component: 'SceneManager',
+                    method: '_loadAndInitializeScene',
+                    params: { sceneName: name },
+                    originalError: error
+                }
+            );
+
+            if (scene && typeof scene.destroy === 'function') {
+                try {
+                    this.engine.errorHandler.warn(`Attempting to destroy scene '${name}' after lifecycle failure.`, { component: 'SceneManager', method: '_loadAndInitializeScene.cleanup', params: { sceneName: name }});
+                    scene.destroy();
+                } catch (destroyError) {
+                    this.engine.errorHandler.error(
+                        `Error while destroying scene '${name}' after it failed lifecycle methods.`, {
+                            component: 'SceneManager',
+                            method: '_loadAndInitializeScene.cleanup',
+                            params: { sceneName: name, originalLifecycleErrorMsg: error.message },
+                            originalError: destroyError
+                        }
+                    );
+                }
+            }
+            return false;
+        }
+    }
+
+    async switchTo(name, ...args) {
+        const sceneEntry = this._validateAndRetrieveScene(name);
+        if (!sceneEntry) return;
+
+        const newSceneInstance = this._instantiateSceneIfNeeded(sceneEntry, name);
+        if (!newSceneInstance) return;
 
         const oldSceneName = this.currentSceneName;
-        this.currentScene = newScene;
+        await this._exitCurrentScene();
+
+        this.currentScene = newSceneInstance;
         this.currentSceneName = name;
         console.log(`SceneManager: Switching from '${oldSceneName || 'none'}' to '${name}'.`);
 
-        try {
-            if (typeof newScene.load === 'function') {
-                console.log(`SceneManager: Loading assets for scene '${name}'.`);
-                await newScene.load();
-            }
-            if (typeof newScene.init === 'function') {
-                console.log(`SceneManager: Initializing scene '${name}'.`);
-                newScene.init(...args);
-            }
-            if (typeof newScene.enter === 'function') {
-                console.log(`SceneManager: Entering scene '${name}'.`);
-                newScene.enter();
-            }
-        } catch (error) {
-            // If load, init, or enter fail, this is critical for the scene.
-            // ErrorHandler has already been called by the scene method if it's well-behaved.
-            // The primary error handler call below is for the switchTo context itself.
-            this.engine.errorHandler.critical(
-                `SceneManager.switchTo: Critical failure during lifecycle of new scene '${name}'. Original error: ${error.message}`,
-                { context: 'SceneManager.switchTo.lifecycleFailure', sceneName: name, originalError: error }
-            );
+        const success = await this._loadAndInitializeScene(newSceneInstance, name, args);
 
-            // Attempt to clean up the failed scene
-            if (newScene && typeof newScene.destroy === 'function') {
-                try {
-                    console.warn(`SceneManager.switchTo: Attempting to destroy scene '${name}' after lifecycle failure.`);
-                    newScene.destroy();
-                } catch (destroyError) {
-                    this.engine.errorHandler.error(
-                        `SceneManager.switchTo: Error while destroying scene '${name}' after it failed to initialize/load/enter. Original lifecycle error: ${error.message}`,
-                        { context: 'SceneManager.switchTo.cleanupDestroyFailure', sceneName: name, cleanupError: destroyError, originalLifecycleError: error }
-                    );
-                    // Do not let the destroyError overshadow the original error.
-                }
-            }
-
-            this.currentScene = null; // Prevent operations on a partially initialized/failed scene
+        if (!success) {
+            // Critical error already logged by _loadAndInitializeScene
+            // Revert current scene if new one failed critically
+            this.currentScene = null;
             this.currentSceneName = null;
-            // The critical handler above already throws, so no need to 'throw error;' here if critical always throws.
-            // If critical does not throw, then 'throw error;' would be needed.
-            // Assuming ErrorHandler.critical re-throws.
+            // Consider if we should attempt to switch back to oldSceneName, though that could also fail.
+            // For now, leaving the engine without a current scene is a clear indication of failure.
+            console.error(`SceneManager: Failed to switch to scene '${name}' due to lifecycle errors. No scene is currently active.`);
+            return;
         }
 
         if (this.engine.eventBus) {
-            this.engine.eventBus.emit('scene:switched', { name: this.currentSceneName, scene: this.currentScene });
+            this.engine.eventBus.emit(SceneEvents.SCENE_SWITCHED, { name: this.currentSceneName, scene: this.currentScene });
         }
         console.log(`SceneManager: Successfully switched to scene '${this.currentSceneName}'.`);
     }
@@ -223,8 +300,15 @@ class SceneManager {
             try {
                 this.currentScene.update(deltaTime);
             } catch (e) {
-                 this.engine.errorHandler.handle(e, { context: `SceneManager.update (${this.currentSceneName})`});
-                 // Depending on game design, an error in update might be critical enough to stop the scene or engine.
+                 this.engine.errorHandler.error(
+                    `Error during update of scene '${this.currentSceneName}'.`,
+                    {
+                        component: 'SceneManager',
+                        method: 'update',
+                        params: { sceneName: this.currentSceneName },
+                        originalError: e
+                    }
+                );
             }
         }
     }
@@ -241,8 +325,15 @@ class SceneManager {
              try {
                 this.currentScene.render(renderingEngine);
             } catch (e) {
-                 this.engine.errorHandler.handle(e, { context: `SceneManager.render (${this.currentSceneName})`});
-                 // Errors during render might also be critical.
+                 this.engine.errorHandler.error(
+                    `Error during render of scene '${this.currentSceneName}'.`,
+                    {
+                        component: 'SceneManager',
+                        method: 'render',
+                        params: { sceneName: this.currentSceneName },
+                        originalError: e
+                    }
+                );
             }
         }
     }
@@ -258,10 +349,20 @@ class SceneManager {
             const sceneToDestroyName = this.currentSceneName;
             console.log(`SceneManager: Destroying current scene '${sceneToDestroyName}'.`);
             if (typeof this.currentScene.exit === 'function') {
-                try { this.currentScene.exit(); } catch (e) { this.engine.errorHandler.handle(e, {context: `destroyCurrentScene.exit (${sceneToDestroyName})`}); }
+                try { this.currentScene.exit(); } catch (e) {
+                    this.engine.errorHandler.error(
+                        `Error during exit of scene '${sceneToDestroyName}' on destroy.`,
+                        { component: 'SceneManager', method: 'destroyCurrentScene.exit', params: { sceneName: sceneToDestroyName }, originalError: e }
+                    );
+                }
             }
             if (typeof this.currentScene.destroy === 'function') {
-                try { this.currentScene.destroy(); } catch (e) { this.engine.errorHandler.handle(e, {context: `destroyCurrentScene.destroy (${sceneToDestroyName})`}); }
+                try { this.currentScene.destroy(); } catch (e) {
+                    this.engine.errorHandler.error(
+                        `Error during destroy of scene '${sceneToDestroyName}'.`,
+                        { component: 'SceneManager', method: 'destroyCurrentScene.destroy', params: { sceneName: sceneToDestroyName }, originalError: e }
+                    );
+                }
             }
             this.currentScene = null;
             this.currentSceneName = null;

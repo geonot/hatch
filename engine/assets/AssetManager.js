@@ -11,25 +11,27 @@
  * It provides methods to load individual assets or asset manifests.
  * Errors during loading are delegated to the engine's ErrorHandler.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the HatchEngine instance.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine instance.
  * @property {Map<string, any>} assets - A cache for successfully loaded assets, keyed by their unique name.
  * @property {Map<string, Promise<any>>} promises - A map to store promises for assets currently being loaded,
  *                                                 keyed by asset name. This prevents duplicate load attempts.
  */
+import { AssetTypes } from '../core/Constants.js';
+
 class AssetManager {
     /**
      * Creates an instance of AssetManager.
-     * @param {import('../core/HatchEngine.js').default} engine - A reference to the HatchEngine instance.
+     * @param {import('../core/HatchEngine.js').HatchEngine} engine - A reference to the HatchEngine instance.
      *        Used for accessing other engine systems like ErrorHandler.
      */
     constructor(engine) {
-        /** @type {import('../core/HatchEngine.js').default} */
+        /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
-        /** @type {Map<string, any>} Stores loaded assets, keyed by name. */
+        /** @type {Map<string, any>} Stores loaded assets, keyed by their name. */
         this.assets = new Map();
-        /** @type {Map<string, Promise<any>>} Stores promises for assets currently loading, keyed by name. */
+        /** @type {Map<string, Promise<any>>} Stores promises for assets currently loading, keyed by their name. */
         this.promises = new Map();
-        console.log("AssetManager: Initialized.");
+        // console.log("AssetManager: Initialized."); // Debug logging can be removed or managed by ErrorHandler
     }
 
     /**
@@ -128,11 +130,12 @@ class AssetManager {
      * @param {Object} assetInfo - Information about the asset to load.
      * @param {string} assetInfo.name - A unique name to identify and cache the asset.
      * @param {string} assetInfo.path - The path or URL to the asset file.
-     * @param {string} assetInfo.type - The type of asset to load (e.g., 'image', 'audio', 'json').
+     * @param {AssetTypes[keyof AssetTypes]} assetInfo.type - The type of asset to load (e.g., `AssetTypes.IMAGE`).
      * @returns {Promise<any>} A promise that resolves with the loaded asset.
      *                         The type of the resolved asset depends on `assetInfo.type`.
      *                         Returns `Promise.resolve(null)` for unsupported asset types.
-     * @throws {Error} If loading fails, the promise will reject with an error.
+     *                         Throws an error via ErrorHandler.critical if loading fails.
+     * @async
      */
     async loadAsset({ name, path, type }) {
         if (this.assets.has(name)) {
@@ -147,21 +150,22 @@ class AssetManager {
 
         let loadPromise;
 
-        switch (type.toLowerCase()) {
-            case 'image':
-                console.log(`AssetManager: Loading image asset: '${name}' from path: ${path}`);
+        // Ensure type is compared against AssetTypes constants
+        switch (type) {
+            case AssetTypes.IMAGE:
+                console.log(`AssetManager: Loading ${AssetTypes.IMAGE} asset: '${name}' from path: ${path}`);
                 loadPromise = this._loadImage(path, name);
                 break;
-            case 'audio':
-                console.log(`AssetManager: Loading audio asset: '${name}' from path: ${path}`);
+            case AssetTypes.AUDIO:
+                console.log(`AssetManager: Loading ${AssetTypes.AUDIO} asset: '${name}' from path: ${path}`);
                 loadPromise = this._loadAudio(path, name);
                 break;
-            case 'json':
-                console.log(`AssetManager: Loading JSON asset: '${name}' from path: ${path}`);
+            case AssetTypes.JSON:
+                console.log(`AssetManager: Loading ${AssetTypes.JSON} asset: '${name}' from path: ${path}`);
                 loadPromise = this._loadJSON(path, name);
                 break;
             default:
-                console.warn(`AssetManager: Asset type '${type}' for asset '${name}' is not currently supported.`);
+                console.warn(`AssetManager: Asset type '${type}' for asset '${name}' is not currently supported. Supported types are: ${Object.values(AssetTypes).join(', ')}.`);
                 return Promise.resolve(null); // Or reject(new Error(...))
         }
 
@@ -170,22 +174,20 @@ class AssetManager {
         try {
             const asset = await loadPromise;
             this.assets.set(name, asset);
-            console.log(`AssetManager: Asset '${name}' (type: ${type}) loaded successfully.`);
+            console.log(`AssetManager: Asset '${name}' (type: ${type}) loaded successfully.`); // type is already a constant value here
             return asset;
         } catch (error) {
             // The error from _loadImage or other loaders should be an Error instance.
             // Using critical as it logs the error and re-throws, matching previous behavior.
             this.engine.errorHandler.critical(
-                error.message, // Pass the error message string
+                error.message,
                 {
-                    phase: 'AssetLoading',
-                    assetName: name,
-                    assetPath: path,
-                    assetType: type,
-                    originalError: error // Pass the original error object for more context
+                    component: 'AssetManager',
+                    method: 'loadAsset',
+                    params: { name, path, type },
+                    originalError: error
                 }
             );
-            // critical already throws, so no need to re-throw here.
         } finally {
             // Remove the promise from the map once it has settled (either resolved or rejected).
             this.promises.delete(name);
@@ -210,60 +212,124 @@ class AssetManager {
      * The manifest should contain an `assets` array, where each element is an object
      * conforming to the `assetInfo` structure expected by `loadAsset`.
      *
-     * @param {Object} manifest - The asset manifest object.
-     * @param {Array<Object>} manifest.assets - An array of asset definitions.
+     * @param {string} url - The URL from which to fetch the manifest file.
+     * @returns {Promise<object|null>} A promise that resolves with the parsed manifest object,
+     *                                   or `null` if fetching or parsing fails.
+     * @private
+     * @async
+     */
+    async _fetchManifestFromUrl(url) {
+        try {
+            // console.log(`AssetManager: Fetching manifest from URL: ${url}`); // Informational, could use this.engine.errorHandler.info
+            const response = await fetch(url);
+            if (!response.ok) {
+                const errorMsg = `Failed to fetch manifest. Status: ${response.status}`;
+                this.engine.errorHandler.error(errorMsg, {
+                    component: 'AssetManager',
+                    method: '_fetchManifestFromUrl',
+                    params: { url, status: response.status }
+                });
+                return null; // Indicate failure
+            }
+            const manifest = await response.json();
+            console.log(`AssetManager: Manifest successfully loaded and parsed from ${url}.`);
+            return manifest;
+        } catch (error) {
+            const errorMsg = `Error loading or parsing manifest JSON from URL.`;
+            this.engine.errorHandler.error(errorMsg, {
+                component: 'AssetManager',
+                method: '_fetchManifestFromUrl',
+                params: { url },
+                originalError: error
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Processes a manifest object, loading all assets defined within it.
+     * @param {object} manifestObject - The manifest object.
+     * @param {Array<object>} manifestObject.assets - An array of asset definitions.
      *        Each definition should have `name`, `path`, and `type` properties.
+     * @returns {Promise<void>} A promise that resolves when all asset loading attempts are settled.
+     * @private
+     * @async
+     */
+    async _processManifestObject(manifestObject) {
+        if (!manifestObject || !manifestObject.assets || !Array.isArray(manifestObject.assets)) {
+            const errorMsg = "Manifest object is invalid or missing the 'assets' array.";
+            this.engine.errorHandler.warn(errorMsg, {
+                component: 'AssetManager',
+                method: '_processManifestObject',
+                params: { manifestType: typeof manifestObject } // Consider summarizing manifestObject if too large
+            });
+            return;
+        }
+
+        const loadPromises = [];
+        for (const assetInfo of manifestObject.assets) {
+            if (!assetInfo.name || !assetInfo.path || !assetInfo.type) {
+                this.engine.errorHandler.warn(
+                    "Skipping invalid asset entry in manifest (missing name, path, or type).",
+                    {
+                        component: 'AssetManager',
+                        method: '_processManifestObject.invalidEntry',
+                        params: { assetInfo }
+                    }
+                );
+                continue;
+            }
+            loadPromises.push(this.loadAsset(assetInfo));
+        }
+
+        const results = await Promise.allSettled(loadPromises);
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                const assetInfo = manifestObject.assets[index];
+                // This console.warn is acceptable as loadAsset itself would have used errorHandler.critical
+                // This is more of a summary log for the manifest loading process.
+                console.warn(`AssetManager._processManifestObject: Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`);
+            }
+        });
+    }
+
+    /**
+     * Loads multiple assets defined in a manifest. The manifest can be provided as a URL
+     * (string) to a JSON file, or as a direct JavaScript object.
+     *
+     * @param {string|object} manifestOrUrl - The URL to the manifest JSON file, or the manifest object itself.
+     * @param {Array<object>} manifestOrUrl.assets - If an object, it must have an `assets` array.
+     *        Each asset definition in the array should have `name`, `path`, and `type` properties.
      * @returns {Promise<void>} A promise that resolves when all assets in the manifest
      *                          have been attempted to load. It uses `Promise.allSettled`
      *                          so one failed asset doesn't prevent others from loading.
+     * @async
      */
-    async loadManifest(manifest) {
-        if (typeof manifest === 'string') {
-            const manifestPath = manifest; // Keep original path for error reporting
-            try {
-                console.log(`AssetManager.loadManifest: Fetching manifest from URL: ${manifestPath}`);
-                const response = await fetch(manifestPath);
-                if (!response.ok) {
-                    const errorMsg = `AssetManager: Failed to fetch manifest from '${manifestPath}'. Status: ${response.status}`;
-                    this.engine.errorHandler.error(errorMsg, { context: 'ManifestLoading', manifestPath });
-                    return; // Stop processing if manifest fetch fails
-                }
-                manifest = await response.json();
-                console.log(`AssetManager.loadManifest: Manifest successfully loaded and parsed from ${manifestPath}.`);
-            } catch (error) {
-                // This catches network errors or errors from response.json() if parsing fails
-                const errorMsg = `AssetManager: Error loading or parsing manifest JSON from '${manifestPath}'. Original error: ${error.message}`;
-                this.engine.errorHandler.error(errorMsg, { context: 'ManifestLoading', manifestPath, originalError: error });
-                return; // Stop processing if manifest loading/parsing fails
+    async loadManifest(manifestOrUrl) {
+        if (typeof manifestOrUrl === 'string') {
+            const manifestUrl = manifestOrUrl;
+            const fetchedManifest = await this._fetchManifestFromUrl(manifestUrl);
+            if (fetchedManifest) {
+                await this._processManifestObject(fetchedManifest);
+            } else {
+                // Error already logged by _fetchManifestFromUrl
+                this.engine.errorHandler.error('Failed to process manifest due to fetch/parse error.', {
+                     component: 'AssetManager',
+                     method: 'loadManifest',
+                     params: { manifestSource: manifestUrl }
+                });
             }
-        }
-
-        if (manifest && manifest.assets && Array.isArray(manifest.assets)) {
-            const loadPromises = [];
-            for (const assetInfo of manifest.assets) {
-                if (!assetInfo.name || !assetInfo.path || !assetInfo.type) {
-                    this.engine.errorHandler.warn(
-                        "AssetManager.loadManifest: Skipping invalid asset entry in manifest (missing name, path, or type).",
-                        { context: 'ManifestLoading.invalidEntry', assetInfo }
-                    );
-                    continue;
-                }
-                loadPromises.push(this.loadAsset(assetInfo));
-            }
-
-            const results = await Promise.allSettled(loadPromises);
-            // Log any errors from manifest loading, though loadAsset already handles individual error reporting.
-            results.forEach((result, index) => {
-                if (result.status === 'rejected') {
-                    const assetInfo = manifest.assets[index];
-                    // This console.warn is acceptable as loadAsset itself would have used errorHandler.critical
-                    // This is more of a summary log for the manifest loading process.
-                    console.warn(`AssetManager.loadManifest: Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`);
-                }
-            });
+        } else if (typeof manifestOrUrl === 'object' && manifestOrUrl !== null) {
+            await this._processManifestObject(manifestOrUrl);
         } else {
-            const errorMsg = "AssetManager.loadManifest: Manifest object is invalid or missing the 'assets' array.";
-            this.engine.errorHandler.warn(errorMsg, { context: 'ManifestLoading.invalidManifest', manifestObject: manifest });
+            this.engine.errorHandler.warn(
+                'loadManifest: Invalid argument. Must be a URL string or a manifest object.',
+                {
+                    component: 'AssetManager',
+                    method: 'loadManifest',
+                    params: { type: typeof manifestOrUrl }
+                }
+            );
         }
     }
 
@@ -272,11 +338,12 @@ class AssetManager {
      * The path is constructed as 'assets/images/[name]'.
      * @param {string} name - The filename of the image (e.g., 'player.png').
      *                        This name is also used as the cache key.
-     * @returns {Promise<HTMLImageElement>} A promise that resolves with the loaded HTMLImageElement.
+     * @returns {Promise<HTMLImageElement>} A promise that resolves with the loaded HTMLImageElement,
+     *                                     or rejects/throws via `loadAsset` if loading fails.
      */
     getImage(name) {
         const path = `assets/images/${name}`;
-        return this.loadAsset({ name, path, type: 'image' });
+        return this.loadAsset({ name, path, type: AssetTypes.IMAGE });
     }
 
     /**
@@ -284,11 +351,12 @@ class AssetManager {
      * The path is constructed as 'assets/audio/[name]'.
      * @param {string} name - The filename of the audio asset (e.g., 'shoot.wav').
      *                        This name is also used as the cache key.
-     * @returns {Promise<HTMLAudioElement>} A promise that resolves with the loaded HTMLAudioElement.
+     * @returns {Promise<HTMLAudioElement>} A promise that resolves with the loaded HTMLAudioElement,
+     *                                      or rejects/throws via `loadAsset` if loading fails.
      */
     getAudio(name) {
         const path = `assets/audio/${name}`;
-        return this.loadAsset({ name, path, type: 'audio' });
+        return this.loadAsset({ name, path, type: AssetTypes.AUDIO });
     }
 
     /**
@@ -296,11 +364,12 @@ class AssetManager {
      * The path is constructed as 'assets/data/[name]'.
      * @param {string} name - The filename of the JSON file (e.g., 'level1.json').
      *                        This name is also used as the cache key.
-     * @returns {Promise<Object>} A promise that resolves with the parsed JSON object.
+     * @returns {Promise<Object>} A promise that resolves with the parsed JSON object,
+     *                             or rejects/throws via `loadAsset` if loading fails.
      */
     getJSON(name) {
         const path = `assets/data/${name}`;
-        return this.loadAsset({ name, path, type: 'json' });
+        return this.loadAsset({ name, path, type: AssetTypes.JSON });
     }
 
     /**
@@ -312,7 +381,11 @@ class AssetManager {
     clearAll() {
         this.assets.clear();
         this.promises.clear();
-        console.log("AssetManager: All cached assets and pending load promises cleared.");
+        // console.log("AssetManager: All cached assets and pending load promises cleared."); // Informational, could use ErrorHandler.info
+        this.engine.errorHandler.info("All cached assets and pending load promises cleared.", {
+            component: "AssetManager",
+            method: "clearAll"
+        });
     }
 }
 

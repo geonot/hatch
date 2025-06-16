@@ -7,78 +7,86 @@
 /**
  * @class GridManager
  * @classdesc Manages a 2D grid system for a game scene. It handles conversions between
- * world coordinates and grid coordinates, stores data for each grid cell (e.g., tile instances),
- * and can render debug grid lines.
+ * world coordinates and grid coordinates, stores data for each grid cell (e.g., tile instances,
+ * pathfinding information), and can render debug grid lines.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the HatchEngine.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine instance.
  * @property {string} type - The type of grid (e.g., 'square'). Currently, only 'square' is fully supported.
- * @property {number} tileWidth - The width of each tile in the grid, in world units.
- * @property {number} tileHeight - The height of each tile in the grid, in world units.
- * @property {number} mapWidth - The width of the grid in number of tiles.
- * @property {number} mapHeight - The height of the grid in number of tiles.
- * @property {number} offsetX - The world x-coordinate of the grid's top-left origin.
- * @property {number} offsetY - The world y-coordinate of the grid's top-left origin.
- * @property {Array<any>} gridData - A 1D array storing data for each grid cell, indexed by `y * mapWidth + x`.
+ * @property {number} tileWidth - The width of each tile in the grid, in world units (pixels).
+ * @property {number} tileHeight - The height of each tile in the grid, in world units (pixels).
+ * @property {number} mapWidth - The width of the grid in number of tiles (columns).
+ * @property {number} mapHeight - The height of the grid in number of tiles (rows).
+ * @property {number} offsetX - The world x-coordinate of the grid's top-left origin. Default is 0.
+ * @property {number} offsetY - The world y-coordinate of the grid's top-left origin. Default is 0.
+ * @property {Array<any>} gridData - A 1D array storing custom data for each grid cell, indexed by `y * mapWidth + x`.
+ *                                   Each element is initialized to `null`.
  */
 class GridManager {
     /**
      * Creates an instance of GridManager.
-     * @param {Object} options - Configuration options for the grid.
-     * @param {import('../core/HatchEngine.js').default} options.engine - Reference to the HatchEngine instance.
-     * @param {string} [options.type='square'] - Type of grid (e.g., 'square'). Currently only 'square' is supported.
-     * @param {number} [options.tileWidth=32] - Width of a single tile in world units (pixels).
-     * @param {number} [options.tileHeight=32] - Height of a single tile in world units (pixels).
-     * @param {number} [options.mapWidth=20] - Width of the map in number of tiles.
-     * @param {number} [options.mapHeight=15] - Height of the map in number of tiles.
+     * @param {object} options - Configuration options for the grid.
+     * @param {import('../core/HatchEngine.js').HatchEngine} options.engine - Reference to the HatchEngine instance. This is mandatory.
+     * @param {string} [options.type='square'] - Type of grid (e.g., 'square'). Currently, only 'square' is fully supported.
+     * @param {number} [options.tileWidth=32] - Width of a single tile in world units (typically pixels).
+     * @param {number} [options.tileHeight=32] - Height of a single tile in world units (typically pixels).
+     * @param {number} [options.mapWidth=20] - Width of the map in number of tiles (columns).
+     * @param {number} [options.mapHeight=15] - Height of the map in number of tiles (rows).
      * @param {number} [options.offsetX=0] - X-offset of the grid's top-left origin in world coordinates.
      * @param {number} [options.offsetY=0] - Y-offset of the grid's top-left origin in world coordinates.
-     * @throws {Error} If `options.engine` is not provided.
+     * @throws {Error} If `options.engine` is not provided, as it's a required dependency.
      */
     constructor({
         engine,
-        type = 'square', // 'square', 'hex', 'isometric'
+        type = 'square',
         tileWidth = 32,
         tileHeight = 32,
-        mapWidth = 20,  // Number of tiles wide
-        mapHeight = 15, // Number of tiles high
-        offsetX = 0,    // World X position of grid origin (top-left)
-        offsetY = 0     // World Y position of grid origin (top-left)
+        mapWidth = 20,
+        mapHeight = 15,
+        offsetX = 0,
+        offsetY = 0
     }) {
         if (!engine) {
+            // This is a critical setup error.
             throw new Error("GridManager constructor: 'engine' instance is required.");
         }
-        /** @type {import('../core/HatchEngine.js').default} */
+        /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
-        /** @type {string} */
+        /** @type {string} The type of grid layout (e.g., 'square'). */
         this.type = type;
-        /** @type {number} */
+        /** @type {number} The width of each individual tile in world units. */
         this.tileWidth = tileWidth;
-        /** @type {number} */
+        /** @type {number} The height of each individual tile in world units. */
         this.tileHeight = tileHeight;
-        /** @type {number} */
+        /** @type {number} The total width of the map in terms of number of tiles. */
         this.mapWidth = mapWidth;
-        /** @type {number} */
+        /** @type {number} The total height of the map in terms of number of tiles. */
         this.mapHeight = mapHeight;
-        /** @type {number} */
+        /** @type {number} The x-coordinate of the grid's origin (top-left) in world space. */
         this.offsetX = offsetX;
-        /** @type {number} */
+        /** @type {number} The y-coordinate of the grid's origin (top-left) in world space. */
         this.offsetY = offsetY;
 
         /**
-         * Stores data for each cell in the grid. This is a 1D array representing a 2D grid.
-         * Access using `gridData[y * mapWidth + x]`.
+         * A 1D array storing custom data for each grid cell. The data is laid out row by row.
+         * Access cell data for (x, y) using `gridData[y * mapWidth + x]`.
          * @type {Array<any>}
          */
         this.gridData = new Array(this.mapHeight * this.mapWidth).fill(null);
 
-        console.log(`GridManager: Initialized ${this.mapWidth}x${this.mapHeight} [${this.type}] grid. Tile size: ${this.tileWidth}x${this.tileHeight}. World offset: (${this.offsetX},${this.offsetY})`);
+        this.engine.errorHandler.info(
+            `GridManager Initialized: ${this.mapWidth}x${this.mapHeight} [${this.type}] grid. Tile: ${this.tileWidth}x${this.tileHeight}. Offset: (${this.offsetX},${this.offsetY})`, {
+                component: 'GridManager',
+                method: 'constructor'
+            }
+        );
     }
 
     /**
      * Converts world coordinates (e.g., mouse position in world space) to grid cell coordinates.
      * @param {number} worldX - The x-coordinate in world space.
-     * @param {number} worldY - The y-coordinate in world space.
-     * @returns {{x: number, y: number}} The corresponding grid cell coordinates (column `x`, row `y`).
+     * @param {number} worldY - The y-coordinate in world space (e.g., from mouse input after camera transformation).
+     * @returns {{x: number, y: number}} An object containing the grid cell's column `x` and row `y`.
+     *                                   Coordinates may be outside the grid boundaries if worldX/worldY are outside.
      */
     worldToGrid(worldX, worldY) {
         const relativeX = worldX - this.offsetX;
@@ -96,7 +104,7 @@ class GridManager {
      * @param {number} gridY - The y-coordinate (row) of the grid cell.
      * @param {boolean} [centered=false] - If true, returns the world coordinates of the center of the cell.
      *                                     If false (default), returns the world coordinates of the top-left corner of the cell.
-     * @returns {{x: number, y: number}} The corresponding world coordinates.
+     * @returns {{x: number, y: number}} An object containing the world `x` and `y` coordinates.
      */
     gridToWorld(gridX, gridY, centered = false) {
         let worldX = (gridX * this.tileWidth) + this.offsetX;
@@ -153,18 +161,25 @@ class GridManager {
 
     /**
      * Sets custom data for a specific tile (cell) in the grid.
-     * This data can be anything, e.g., a Tile instance, pathfinding cost, or a terrain type identifier.
+     * This data can be anything relevant to the game's logic, such as a reference to a
+     * Tile instance, pathfinding cost, terrain type identifier, or game object occupying the cell.
      * @param {number} gridX - The x-coordinate (column) of the grid cell.
      * @param {number} gridY - The y-coordinate (row) of the grid cell.
      * @param {any} data - The data to store for the specified cell.
-     * @returns {boolean} True if the data was set successfully (position was valid), false otherwise.
+     * @returns {boolean} True if the data was set successfully (i.e., the position was valid), false otherwise.
      */
     setTileData(gridX, gridY, data) {
         if (this.isValidGridPosition(gridX, gridY)) {
             this.gridData[gridY * this.mapWidth + gridX] = data;
             return true;
         }
-        // console.warn(`GridManager.setTileData: Position (${gridX}, ${gridY}) is outside grid boundaries.`);
+        this.engine.errorHandler.warn(
+            `Attempted to set tile data outside grid boundaries.`, {
+                component: 'GridManager',
+                method: 'setTileData',
+                params: { gridX, gridY, mapWidth: this.mapWidth, mapHeight: this.mapHeight }
+            }
+        );
         return false;
     }
 
@@ -172,29 +187,38 @@ class GridManager {
      * Retrieves the custom data stored for a specific tile (cell) in the grid.
      * @param {number} gridX - The x-coordinate (column) of the grid cell.
      * @param {number} gridY - The y-coordinate (row) of the grid cell.
-     * @returns {any|undefined} The data stored for the cell if the position is valid and data exists;
-     *                          otherwise, `undefined` (if out of bounds) or `null` (if valid but no data set, default).
+     * @returns {any | undefined} The data stored for the cell if the position is valid. This could be `null`
+     *                            if the cell is valid but no data has been set. Returns `undefined` if the
+     *                            coordinates are outside the grid boundaries.
      */
     getTileData(gridX, gridY) {
         if (this.isValidGridPosition(gridX, gridY)) {
             return this.gridData[gridY * this.mapWidth + gridX];
         }
-        return undefined; // Position is outside grid boundaries
+        // Optionally log a warning if trying to get data from outside bounds, though often this might be intentional.
+        // this.engine.errorHandler.debug(`Attempted to get tile data outside grid boundaries.`,
+        //     { component: 'GridManager', method: 'getTileData', params: { gridX, gridY }});
+        return undefined;
     }
 
     /**
      * Renders grid lines for debugging purposes. This method should be called within a scene's
-     * `render` method, after camera transformations have been applied to the rendering context.
-     * Uses the `RenderingEngine.drawLine` method.
+     * `render` method (or a dedicated debug render pass), after camera transformations
+     * have been applied to the rendering context by `RenderingEngine.camera.applyTransform()`.
+     * It uses the `RenderingEngine.drawLine()` method for drawing.
      *
-     * @param {import('../rendering/RenderingEngine.js').default} renderingEngine - The engine's rendering manager.
+     * @param {import('../rendering/RenderingEngine.js').RenderingEngine} renderingEngine - The engine's rendering manager.
      * @param {string} [color='#555555'] - CSS color string for the grid lines.
      * @param {number} [lineWidth=1] - Desired width of the grid lines in world units.
-     *                                 The actual visual thickness will be adjusted by camera zoom in `drawLine`.
+     *                                 The actual visual thickness will be adjusted by camera zoom within `renderingEngine.drawLine`.
      */
     renderGridLines(renderingEngine, color = '#555555', lineWidth = 1) {
         if (!renderingEngine || !renderingEngine.context || typeof renderingEngine.drawLine !== 'function') {
-            console.error("GridManager.renderGridLines: Valid RenderingEngine with drawLine method is required.");
+            this.engine.errorHandler.error("Valid RenderingEngine with drawLine method is required to render grid lines.", {
+                component: 'GridManager',
+                method: 'renderGridLines',
+                params: { hasRenderingEngine: !!renderingEngine, hasContext: !!(renderingEngine && renderingEngine.context), hasDrawLine: typeof renderingEngine?.drawLine }
+            });
             return;
         }
 
