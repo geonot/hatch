@@ -25,13 +25,19 @@ class AssetManager {
      *        Used for accessing other engine systems like ErrorHandler.
      */
     constructor(engine) {
+        if (!engine || !engine.errorHandler) {
+            // Cannot use this.engine.errorHandler if engine or errorHandler itself is missing.
+            const errorMsg = "AssetManager constructor: Valid 'engine' instance with 'errorHandler' is required.";
+            console.error(errorMsg); // Fallback log
+            throw new Error(errorMsg);
+        }
         /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
         /** @type {Map<string, any>} Stores loaded assets, keyed by their name. */
         this.assets = new Map();
         /** @type {Map<string, Promise<any>>} Stores promises for assets currently loading, keyed by their name. */
         this.promises = new Map();
-        // console.log("AssetManager: Initialized."); // Debug logging can be removed or managed by ErrorHandler
+        this.engine.errorHandler.info("AssetManager Initialized.", { component: 'AssetManager', method: 'constructor' });
     }
 
     /**
@@ -46,7 +52,6 @@ class AssetManager {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
-                // console.log(`AssetManager: Image '${name}' loaded from ${path}`);
                 resolve(img);
             };
             img.onerror = (errorEvent) => {
@@ -138,13 +143,29 @@ class AssetManager {
      * @async
      */
     async loadAsset({ name, path, type }) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            const errorMsg = "AssetManager.loadAsset: 'name' must be a non-empty string.";
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type } });
+            return Promise.reject(new Error(errorMsg));
+        }
+        if (typeof path !== 'string' || path.trim() === '') {
+            const errorMsg = "AssetManager.loadAsset: 'path' must be a non-empty string.";
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type } });
+            return Promise.reject(new Error(errorMsg));
+        }
+        if (typeof type !== 'string' || !Object.values(AssetTypes).includes(type)) {
+            const errorMsg = `AssetManager.loadAsset: 'type' must be a valid AssetType. Received: ${type}`;
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type }, validTypes: Object.values(AssetTypes) });
+            return Promise.reject(new Error(errorMsg));
+        }
+
         if (this.assets.has(name)) {
-            // console.log(`AssetManager: Asset '${name}' already loaded. Returning cached version.`);
+            this.engine.errorHandler.debug(`Asset '${name}' already loaded. Returning cached version.`, { component: 'AssetManager', method: 'loadAsset', params: { name }});
             return this.assets.get(name);
         }
 
         if (this.promises.has(name)) {
-            // console.log(`AssetManager: Asset '${name}' currently loading. Returning existing promise.`);
+            this.engine.errorHandler.debug(`Asset '${name}' currently loading. Returning existing promise.`, { component: 'AssetManager', method: 'loadAsset', params: { name }});
             return this.promises.get(name);
         }
 
@@ -153,19 +174,19 @@ class AssetManager {
         // Ensure type is compared against AssetTypes constants
         switch (type) {
             case AssetTypes.IMAGE:
-                console.log(`AssetManager: Loading ${AssetTypes.IMAGE} asset: '${name}' from path: ${path}`);
+                this.engine.errorHandler.info(`Loading image asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.IMAGE, params: { name, path } });
                 loadPromise = this._loadImage(path, name);
                 break;
             case AssetTypes.AUDIO:
-                console.log(`AssetManager: Loading ${AssetTypes.AUDIO} asset: '${name}' from path: ${path}`);
+                this.engine.errorHandler.info(`Loading audio asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.AUDIO, params: { name, path } });
                 loadPromise = this._loadAudio(path, name);
                 break;
             case AssetTypes.JSON:
-                console.log(`AssetManager: Loading ${AssetTypes.JSON} asset: '${name}' from path: ${path}`);
+                this.engine.errorHandler.info(`Loading json asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.JSON, params: { name, path } });
                 loadPromise = this._loadJSON(path, name);
                 break;
             default:
-                console.warn(`AssetManager: Asset type '${type}' for asset '${name}' is not currently supported. Supported types are: ${Object.values(AssetTypes).join(', ')}.`);
+                this.engine.errorHandler.warn(`Asset type '${type}' for asset '${name}' is not currently supported. Supported types are: ${Object.values(AssetTypes).join(', ')}.`, { component: 'AssetManager', method: 'loadAsset', params: { name, type }});
                 return Promise.resolve(null); // Or reject(new Error(...))
         }
 
@@ -174,7 +195,7 @@ class AssetManager {
         try {
             const asset = await loadPromise;
             this.assets.set(name, asset);
-            console.log(`AssetManager: Asset '${name}' (type: ${type}) loaded successfully.`); // type is already a constant value here
+            this.engine.errorHandler.info(`Asset '${name}' (type: ${type}) loaded successfully.`, { component: 'AssetManager', method: 'loadAsset', params: { name, type }});
             return asset;
         } catch (error) {
             // The error from _loadImage or other loaders should be an Error instance.
@@ -200,8 +221,12 @@ class AssetManager {
      * @returns {any|undefined} The loaded asset if found in the cache, otherwise undefined.
      */
     get(name) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            this.engine.errorHandler.error("AssetManager.get: 'name' must be a non-empty string.", { component: 'AssetManager', method: 'get', params: { name } });
+            return undefined;
+        }
         if (!this.assets.has(name)) {
-            // console.warn(`AssetManager.get: Asset '${name}' not found in cache.`);
+            this.engine.errorHandler.warn(`Asset '${name}' not found in cache.`, { component: 'AssetManager', method: 'get', params: { name }});
             return undefined;
         }
         return this.assets.get(name);
@@ -220,7 +245,7 @@ class AssetManager {
      */
     async _fetchManifestFromUrl(url) {
         try {
-            // console.log(`AssetManager: Fetching manifest from URL: ${url}`); // Informational, could use this.engine.errorHandler.info
+            this.engine.errorHandler.info(`Fetching manifest from URL: ${url}`, { component: 'AssetManager', method: '_fetchManifestFromUrl', params: { url }});
             const response = await fetch(url);
             if (!response.ok) {
                 const errorMsg = `Failed to fetch manifest. Status: ${response.status}`;
@@ -232,7 +257,7 @@ class AssetManager {
                 return null; // Indicate failure
             }
             const manifest = await response.json();
-            console.log(`AssetManager: Manifest successfully loaded and parsed from ${url}.`);
+            this.engine.errorHandler.info(`Manifest successfully loaded and parsed from ${url}.`, { component: 'AssetManager', method: '_fetchManifestFromUrl', params: { url }});
             return manifest;
         } catch (error) {
             const errorMsg = `Error loading or parsing manifest JSON from URL.`;
@@ -286,9 +311,7 @@ class AssetManager {
         results.forEach((result, index) => {
             if (result.status === 'rejected') {
                 const assetInfo = manifestObject.assets[index];
-                // This console.warn is acceptable as loadAsset itself would have used errorHandler.critical
-                // This is more of a summary log for the manifest loading process.
-                console.warn(`AssetManager._processManifestObject: Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`);
+                this.engine.errorHandler.warn(`Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`, { component: 'AssetManager', method: '_processManifestObject', params: { assetName: assetInfo.name, reason: result.reason?.message }});
             }
         });
     }
@@ -342,6 +365,11 @@ class AssetManager {
      *                                     or rejects/throws via `loadAsset` if loading fails.
      */
     getImage(name) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            const errorMsg = "AssetManager.getImage: 'name' must be a non-empty string.";
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getImage', params: { name } });
+            return Promise.reject(new Error(errorMsg));
+        }
         const path = `assets/images/${name}`;
         return this.loadAsset({ name, path, type: AssetTypes.IMAGE });
     }
@@ -355,6 +383,11 @@ class AssetManager {
      *                                      or rejects/throws via `loadAsset` if loading fails.
      */
     getAudio(name) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            const errorMsg = "AssetManager.getAudio: 'name' must be a non-empty string.";
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getAudio', params: { name } });
+            return Promise.reject(new Error(errorMsg));
+        }
         const path = `assets/audio/${name}`;
         return this.loadAsset({ name, path, type: AssetTypes.AUDIO });
     }
@@ -368,6 +401,11 @@ class AssetManager {
      *                             or rejects/throws via `loadAsset` if loading fails.
      */
     getJSON(name) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            const errorMsg = "AssetManager.getJSON: 'name' must be a non-empty string.";
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getJSON', params: { name } });
+            return Promise.reject(new Error(errorMsg));
+        }
         const path = `assets/data/${name}`;
         return this.loadAsset({ name, path, type: AssetTypes.JSON });
     }

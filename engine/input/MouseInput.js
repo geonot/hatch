@@ -80,7 +80,6 @@ class MouseInput {
         this.targetElement.addEventListener('mouseup', this._onMouseUp, false); // Listen on target, could also listen on window/document for dragging out
         this.targetElement.addEventListener('contextmenu', this._onContextMenu, false);
         this.targetElement.addEventListener('wheel', this._onWheel, { passive: false }); // Use { passive: false } if preventDefault might be called
-        // console.log("MouseInput: Events attached to", this.targetElement);
     }
 
     /**
@@ -93,7 +92,6 @@ class MouseInput {
         this.targetElement.removeEventListener('mouseup', this._onMouseUp, false);
         this.targetElement.removeEventListener('contextmenu', this._onContextMenu, false);
         this.targetElement.removeEventListener('wheel', this._onWheel, false);
-        // console.log("MouseInput: Events detached from", this.targetElement);
     }
 
     /**

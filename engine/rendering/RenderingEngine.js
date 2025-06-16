@@ -68,10 +68,26 @@ class RenderingEngine {
      * @throws {Error} If the 2D rendering context cannot be obtained from the canvas (propagated via ErrorHandler).
      */
     constructor(canvas, engine, options = {}) {
-        /** @type {import('../core/HatchEngine.js').HatchEngine} */
+        if (!engine || !engine.errorHandler) {
+            const errorMsg = "RenderingEngine constructor: Valid 'engine' instance with 'errorHandler' is required.";
+            console.error(errorMsg); // Fallback if errorHandler is not available
+            throw new Error(errorMsg);
+        }
         this.engine = engine;
-        /** @type {HTMLCanvasElement} */
+
+        if (!(canvas instanceof HTMLCanvasElement)) {
+            const errorMsg = "RenderingEngine constructor: 'canvas' must be an HTMLCanvasElement.";
+            this.engine.errorHandler.critical(errorMsg, { component: 'RenderingEngine', method: 'constructor' });
+            throw new TypeError(errorMsg); // Critical, cannot proceed
+        }
         this.canvas = canvas;
+
+        if (options && typeof options !== 'object') {
+            this.engine.errorHandler.warn(`RenderingEngine constructor: 'options' parameter should be an object. Received: ${typeof options}`, { component: 'RenderingEngine', method: 'constructor' });
+            options = {}; // Use default options
+        }
+
+
         /** @type {CanvasRenderingContext2D | null} */
         this.context = null;
 
@@ -80,29 +96,22 @@ class RenderingEngine {
             this.context = this.canvas.getContext('2d', contextOptions);
             if (!this.context) {
                 // This error is critical for the rendering engine's operation.
-                const err = new Error("RenderingEngine: Failed to get 2D rendering context. Rendering will not be possible.");
-                if (this.engine && this.engine.errorHandler) {
-                    this.engine.errorHandler.critical(err.message, {
-                        component: 'RenderingEngine',
-                        method: 'constructor',
-                        originalError: err
-                    });
-                } else {
-                    console.error("Critical Error: RenderingEngine failed to initialize context and no errorHandler is available.", err);
-                    throw err;
-                }
+                // ErrorHandler is available at this point due to the check above.
+                this.engine.errorHandler.critical("RenderingEngine: Failed to get 2D rendering context. Rendering will not be possible.", {
+                    component: 'RenderingEngine',
+                    method: 'constructor'
+                });
+                // No need to throw here if errorHandler.critical already does.
+                // However, to be safe and ensure constructor fails hard:
+                throw new Error("RenderingEngine: Failed to get 2D rendering context.");
             }
         } catch (error) { // Catch any other error during context creation
-            if (this.engine && this.engine.errorHandler) {
-                this.engine.errorHandler.critical(error.message, {
-                    component: 'RenderingEngine',
-                    method: 'constructor.getContext',
-                    originalError: error
-                });
-            } else {
-                console.error("Critical Error: RenderingEngine failed during getContext and no errorHandler is available.", error);
-                throw error;
-            }
+            this.engine.errorHandler.critical(error.message, {
+                component: 'RenderingEngine',
+                method: 'constructor.getContext',
+                originalError: error
+            });
+            throw error; // Re-throw to ensure constructor failure
         }
 
         /** @type {number} */
@@ -212,6 +221,14 @@ class RenderingEngine {
      * @param {number} [lineWidth=1] - Width of the line in world units. Visual thickness is adjusted by camera zoom.
      */
     drawLine(x1, y1, x2, y2, color = 'white', lineWidth = 1) {
+        if (typeof x1 !== 'number' || typeof y1 !== 'number' || typeof x2 !== 'number' || typeof y2 !== 'number' || typeof lineWidth !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for drawLine coordinates or lineWidth (must be numbers).', { component: 'RenderingEngine', method: 'drawLine', params: { x1, y1, x2, y2, lineWidth } });
+            return;
+        }
+        if (typeof color !== 'string') {
+            this.engine.errorHandler.error('Invalid color type for drawLine (must be a string).', { component: 'RenderingEngine', method: 'drawLine', params: { color } });
+            return;
+        }
         this.context.beginPath();
         this.context.moveTo(x1, y1);
         this.context.lineTo(x2, y2);
@@ -232,8 +249,19 @@ class RenderingEngine {
      * @param {boolean} [fill=true] - True to fill, false to stroke.
      */
     drawRect(x, y, width, height, color, fill = true) {
-        // Culling is generally handled by the scene or objects themselves before adding to drawables.
-        // if (!this.camera.isRectInView({x, y, width, height})) return;
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+            this.engine.errorHandler.error('Invalid parameter type for drawRect coordinates or dimensions (must be numbers).', { component: 'RenderingEngine', method: 'drawRect', params: { x, y, width, height } });
+            return;
+        }
+        if (typeof color !== 'string') {
+            this.engine.errorHandler.error('Invalid color type for drawRect (must be a string).', { component: 'RenderingEngine', method: 'drawRect', params: { color } });
+            return;
+        }
+        if (typeof fill !== 'boolean') {
+            this.engine.errorHandler.error('Invalid fill type for drawRect (must be a boolean).', { component: 'RenderingEngine', method: 'drawRect', params: { fill } });
+            // Optionally default fill to true or return
+            fill = true;
+        }
 
         this.context.fillStyle = color;
         this.context.strokeStyle = color;
@@ -251,7 +279,15 @@ class RenderingEngine {
      * @param {...number} args - Arguments for `drawImage` (dx, dy, [dWidth, dHeight], [sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight]). World space.
      */
     drawImage(image, ...args) {
-        if (image && image instanceof HTMLImageElement && (image.naturalWidth === 0 || image.naturalHeight === 0) && image.complete) {
+        if (!(image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap))) {
+            this.engine.errorHandler.error('Invalid image type for drawImage. Must be HTMLImageElement, HTMLCanvasElement, or ImageBitmap.', { component: 'RenderingEngine', method: 'drawImage', params: { imageType: typeof image } });
+            return;
+        }
+        // It's good practice to check if numerical arguments are indeed numbers, though drawImage itself will throw TypeErrors.
+        // For brevity, we'll rely on the internal error catching for args type issues for now,
+        // but a full validation would check each relevant arg in ...args.
+
+        if (image instanceof HTMLImageElement && (image.naturalWidth === 0 || image.naturalHeight === 0) && image.complete) {
             this.engine.errorHandler.warn(
                 `Attempting to draw image with zero dimensions (naturalWidth: ${image.naturalWidth}, naturalHeight: ${image.naturalHeight}).`, {
                 component: 'RenderingEngine',
@@ -298,6 +334,19 @@ class RenderingEngine {
      * @param {CanvasTextBaseline} [baseline='top'] - Vertical baseline.
      */
     drawText(text, x, y, font = '16px sans-serif', color = 'black', align = 'left', baseline = 'top') {
+        if (typeof text !== 'string' && typeof text !== 'number') { // Canvas fillText can take numbers
+            this.engine.errorHandler.error('Invalid text type for drawText (must be a string or number).', { component: 'RenderingEngine', method: 'drawText', params: { text } });
+            return;
+        }
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            this.engine.errorHandler.error('Invalid coordinates type for drawText (must be numbers).', { component: 'RenderingEngine', method: 'drawText', params: { x, y } });
+            return;
+        }
+        if (typeof font !== 'string' || typeof color !== 'string' || typeof align !== 'string' || typeof baseline !== 'string') {
+            this.engine.errorHandler.error('Invalid font, color, align, or baseline type for drawText (must be strings).', { component: 'RenderingEngine', method: 'drawText', params: { font, color, align, baseline } });
+            return;
+        }
+
         this.context.font = font;
         this.context.fillStyle = color;
         this.context.textAlign = align;

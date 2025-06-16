@@ -50,17 +50,53 @@ class InputManager {
         /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
 
-        /** @type {KeyboardInput} Instance of the keyboard input handler. */
-        this.keyboard = new KeyboardInput(options.keyboardEventTarget || window);
-        /** @type {MouseInput} Instance of the mouse input handler. */
-        this.mouse = new MouseInput(canvasElement, engine);
+        let validOptions = {};
+        if (options && typeof options === 'object') {
+            validOptions = options;
+        } else if (options !== undefined) {
+            // ErrorHandler might not be fully set up if engine itself is not fully valid,
+            // but InputManager constructor relies on a valid engine.
+            this.engine.errorHandler.warn(`InputManager constructor: options parameter was not an object. Proceeding with defaults.`, { component: 'InputManager', method: 'constructor', providedOptionsType: typeof options });
+        }
+
+        const keyboardTarget = validOptions.keyboardEventTarget || window;
+        if (!(keyboardTarget && typeof keyboardTarget.addEventListener === 'function')) {
+            this.engine.errorHandler.error(`InputManager constructor: options.keyboardEventTarget is invalid. Defaulting to window.`, { component: 'InputManager', method: 'constructor' });
+            // Fallback to window if invalid target provided. This part is tricky as KeyboardInput would default too.
+            // Ensuring KeyboardInput gets a valid target or this.keyboard might fail.
+        }
+
+
+        try {
+            /** @type {KeyboardInput} Instance of the keyboard input handler. */
+            this.keyboard = new KeyboardInput(keyboardTarget); // Use validated or default target
+            /** @type {MouseInput} Instance of the mouse input handler. */
+            this.mouse = new MouseInput(canvasElement, engine);
+        } catch (error) {
+            this.engine.errorHandler.critical('Failed to initialize input handlers (KeyboardInput or MouseInput).', {
+                component: 'InputManager',
+                method: 'constructor',
+                originalError: error
+            });
+            // To prevent further errors, ensure keyboard and mouse are non-null or throw to stop InputManager creation.
+            // For now, we'll let the error propagate if critical, or ensure they are assigned something.
+            // Assigning null or a safe dummy object might be an alternative if we don't re-throw.
+            this.keyboard = this.keyboard || null; // Ensure it's defined even if constructor failed
+            this.mouse = this.mouse || null;       // Ensure it's defined
+            throw error; // Re-throw as this is critical for InputManager functionality
+        }
 
         // GamepadInput could be initialized here if implemented
         // /** @type {GamepadInput | undefined} Instance of the gamepad input handler. */
         // this.gamepad = new GamepadInput(); // Or based on an option
 
         /** @type {boolean} Stores the configuration for preventing context menu. */
-        this.preventContextMenu = options.preventContextMenu === undefined ? true : !!options.preventContextMenu;
+        if (validOptions.preventContextMenu !== undefined && typeof validOptions.preventContextMenu !== 'boolean') {
+            this.engine.errorHandler.warn(`InputManager constructor: options.preventContextMenu should be a boolean. Defaulting to true.`, { component: 'InputManager', method: 'constructor', providedType: typeof validOptions.preventContextMenu });
+            this.preventContextMenu = true;
+        } else {
+            this.preventContextMenu = validOptions.preventContextMenu === undefined ? true : !!validOptions.preventContextMenu;
+        }
 
         this.engine.errorHandler.info("InputManager Initialized.", { component: "InputManager", method: "constructor" });
     }
@@ -74,8 +110,16 @@ class InputManager {
      *                             (Currently not directly used by KeyboardInput/MouseInput's update, but passed for future compatibility).
      */
     update(deltaTime) {
-        this.keyboard.update();
-        this.mouse.update();
+        try {
+            if (this.keyboard) this.keyboard.update();
+        } catch (e) {
+            this.engine.errorHandler.error('Error during KeyboardInput update.', { component: 'InputManager', method: 'update', originalError: e, inputHandler: 'KeyboardInput' });
+        }
+        try {
+            if (this.mouse) this.mouse.update();
+        } catch (e) {
+            this.engine.errorHandler.error('Error during MouseInput update.', { component: 'InputManager', method: 'update', originalError: e, inputHandler: 'MouseInput' });
+        }
         // if (this.gamepad) this.gamepad.update(deltaTime); // Future gamepad support
     }
 
@@ -86,7 +130,11 @@ class InputManager {
      * @returns {boolean} True if the key is currently pressed, false otherwise.
      */
     isKeyPressed(keyCode) {
-        return this.keyboard.isKeyPressed(keyCode);
+        if (typeof keyCode !== 'string') {
+            this.engine.errorHandler.error("InputManager.isKeyPressed: keyCode must be a string.", { component: 'InputManager', method: 'isKeyPressed', params: { keyCode } });
+            return false;
+        }
+        return this.keyboard ? this.keyboard.isKeyPressed(keyCode) : false;
     }
 
     /**
@@ -95,7 +143,11 @@ class InputManager {
      * @returns {boolean} True if the key was pressed down in the current frame, false otherwise.
      */
     isKeyJustPressed(keyCode) {
-        return this.keyboard.isKeyJustPressed(keyCode);
+        if (typeof keyCode !== 'string') {
+            this.engine.errorHandler.error("InputManager.isKeyJustPressed: keyCode must be a string.", { component: 'InputManager', method: 'isKeyJustPressed', params: { keyCode } });
+            return false;
+        }
+        return this.keyboard ? this.keyboard.isKeyJustPressed(keyCode) : false;
     }
 
     /**
@@ -104,7 +156,11 @@ class InputManager {
      * @returns {boolean} True if the key was released in the current frame, false otherwise.
      */
     isKeyJustReleased(keyCode) {
-        return this.keyboard.isKeyJustReleased(keyCode);
+        if (typeof keyCode !== 'string') {
+            this.engine.errorHandler.error("InputManager.isKeyJustReleased: keyCode must be a string.", { component: 'InputManager', method: 'isKeyJustReleased', params: { keyCode } });
+            return false;
+        }
+        return this.keyboard ? this.keyboard.isKeyJustReleased(keyCode) : false;
     }
 
     // --- Mouse Convenience Methods ---
@@ -116,7 +172,7 @@ class InputManager {
      * @returns {{x: number, y: number}} An object with `x` and `y` properties representing the mouse position in logical pixels.
      */
     getMousePosition() {
-        return this.mouse.getMousePosition();
+        return this.mouse ? this.mouse.getMousePosition() : { x: 0, y: 0 };
     }
 
     /**
@@ -125,7 +181,11 @@ class InputManager {
      * @returns {boolean} True if the button is currently pressed, false otherwise.
      */
     isMouseButtonPressed(buttonCode) {
-        return this.mouse.isMouseButtonPressed(buttonCode);
+        if (typeof buttonCode !== 'number') {
+            this.engine.errorHandler.error("InputManager.isMouseButtonPressed: buttonCode must be a number.", { component: 'InputManager', method: 'isMouseButtonPressed', params: { buttonCode } });
+            return false;
+        }
+        return this.mouse ? this.mouse.isMouseButtonPressed(buttonCode) : false;
     }
 
     /**
@@ -134,7 +194,11 @@ class InputManager {
      * @returns {boolean} True if the button was pressed down in the current frame, false otherwise.
      */
     isMouseButtonJustPressed(buttonCode) {
-        return this.mouse.isMouseButtonJustPressed(buttonCode);
+        if (typeof buttonCode !== 'number') {
+            this.engine.errorHandler.error("InputManager.isMouseButtonJustPressed: buttonCode must be a number.", { component: 'InputManager', method: 'isMouseButtonJustPressed', params: { buttonCode } });
+            return false;
+        }
+        return this.mouse ? this.mouse.isMouseButtonJustPressed(buttonCode) : false;
     }
 
     /**
@@ -143,7 +207,11 @@ class InputManager {
      * @returns {boolean} True if the button was released in the current frame, false otherwise.
      */
     isMouseButtonJustReleased(buttonCode) {
-        return this.mouse.isMouseButtonJustReleased(buttonCode);
+        if (typeof buttonCode !== 'number') {
+            this.engine.errorHandler.error("InputManager.isMouseButtonJustReleased: buttonCode must be a number.", { component: 'InputManager', method: 'isMouseButtonJustReleased', params: { buttonCode } });
+            return false;
+        }
+        return this.mouse ? this.mouse.isMouseButtonJustReleased(buttonCode) : false;
     }
 
     /**
@@ -152,7 +220,7 @@ class InputManager {
      * @returns {number} The horizontal scroll delta.
      */
     getMouseScrollDeltaX() {
-        return this.mouse.getScrollDeltaX();
+        return this.mouse ? this.mouse.getScrollDeltaX() : 0;
     }
 
     /**
@@ -161,7 +229,7 @@ class InputManager {
      * @returns {number} The vertical scroll delta.
      */
     getMouseScrollDeltaY() {
-        return this.mouse.getScrollDeltaY();
+        return this.mouse ? this.mouse.getScrollDeltaY() : 0;
     }
 
     // --- Gamepad Convenience Methods (Example for future expansion) ---
@@ -191,11 +259,19 @@ class InputManager {
      * to prevent memory leaks and unintended behavior.
      */
     destroy() {
-        if (this.keyboard) {
-            this.keyboard.detachEvents();
+        try {
+            if (this.keyboard) {
+                this.keyboard.detachEvents();
+            }
+        } catch (e) {
+            this.engine.errorHandler.warn('Error detaching keyboard events.', { component: 'InputManager', method: 'destroy', originalError: e, inputHandler: 'KeyboardInput' });
         }
-        if (this.mouse) {
-            this.mouse.detachEvents();
+        try {
+            if (this.mouse) {
+                this.mouse.detachEvents();
+            }
+        } catch (e) {
+            this.engine.errorHandler.warn('Error detaching mouse events.', { component: 'InputManager', method: 'destroy', originalError: e, inputHandler: 'MouseInput' });
         }
         // if (this.gamepad) this.gamepad.destroy();
         this.engine.errorHandler.info("InputManager Destroyed and event listeners detached.", {

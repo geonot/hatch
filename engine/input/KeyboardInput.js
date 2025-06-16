@@ -50,7 +50,6 @@ class KeyboardInput {
         }
         this.eventTarget.addEventListener('keydown', this._onKeyDown, false);
         this.eventTarget.addEventListener('keyup', this._onKeyUp, false);
-        // console.log("KeyboardInput: Events attached to", this.eventTarget);
     }
 
     /**
@@ -60,12 +59,10 @@ class KeyboardInput {
      */
     detachEvents() {
         if (!this.eventTarget || !this.eventTarget.removeEventListener) {
-            // console.warn("KeyboardInput: eventTarget is null or does not support removeEventListener during detach.");
             return;
         }
         this.eventTarget.removeEventListener('keydown', this._onKeyDown, false);
         this.eventTarget.removeEventListener('keyup', this._onKeyUp, false);
-        // console.log("KeyboardInput: Events detached from", this.eventTarget);
     }
 
     /**
