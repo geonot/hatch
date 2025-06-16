@@ -14,91 +14,120 @@ import Camera from './Camera.js';
  * manages a camera for viewport transformations, supports DPI scaling for sharp visuals,
  * and provides methods for drawing basic shapes, images, and text.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the main HatchEngine instance.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the main HatchEngine instance.
  * @property {HTMLCanvasElement} canvas - The HTML canvas element used for rendering.
  * @property {CanvasRenderingContext2D} context - The 2D rendering context of the canvas.
- * @property {number} width - The logical width of the canvas (from configuration).
- * @property {number} height - The logical height of the canvas (from configuration).
- * @property {number} pixelRatio - The device pixel ratio for handling high DPI displays.
- * @property {Camera} camera - The camera instance used for viewport management.
+ * @property {number} width - The logical width of the canvas, matching `engine.hatchConfig.gameWidth`.
+ * @property {number} height - The logical height of the canvas, matching `engine.hatchConfig.gameHeight`.
+ * @property {number} pixelRatio - The device pixel ratio, used for scaling the canvas on high DPI displays.
+ * @property {Camera} camera - The camera instance used for viewport management and transformations.
  * @property {Array<Object>} drawables - A list of objects to be rendered in the current frame.
- *                                      Each object must have a `render(ctx)` method.
- * @property {Object} renderStats - Statistics about rendering performance.
- * @property {number} renderStats.drawCalls - Number of draw operations in the last frame.
- * @property {number} renderStats.objectsRendered - Number of objects rendered in the last frame.
- * @property {number} renderStats.frameTime - Time taken to render the last frame in milliseconds (specifically the rendering part of the game loop).
- * @property {boolean} showDebugInfo - Flag to control the display of debug information.
+ *                                      Each object must have a `render(context: CanvasRenderingContext2D): void` method
+ *                                      and an optional `visible: boolean` property.
+ * @property {Object} renderStats - An object holding statistics about rendering performance.
+ * @property {number} renderStats.drawCalls - Number of distinct draw operations (e.g., `fillRect`, `drawImage`) in the last rendered frame.
+ * @property {number} renderStats.objectsRendered - Number of managed drawable objects rendered in the last frame.
+ * @property {number} renderStats.frameTime - Time taken to render the last frame in milliseconds (engine's rendering phase).
+ * @property {boolean} showDebugInfo - Flag to control the display of the debug information overlay.
+ *                                    This can be influenced by engine configuration.
  */
 class RenderingEngine {
     /**
+     * @description Default styles for the debug information overlay.
+     * These can be overridden by settings in `hatch.config.yaml` under `renderer.debug` or `debug`.
+     * @type {Object}
+     * @property {string} fontFamily - Font family for debug text.
+     * @property {number} fontSize - Logical font size in pixels.
+     * @property {string} fontColor - Color of debug text.
+     * @property {string} bgColor - Background color of the debug overlay box.
+     * @property {number} padding - Logical padding in pixels inside the debug box.
+     * @property {number} lineHeightPadding - Additional logical padding for line height.
+     * @static
+     * @private
+     */
+    static _defaultDebugStyles = {
+        fontFamily: 'Arial',
+        fontSize: 12, // Logical pixels
+        fontColor: 'white',
+        bgColor: 'rgba(0,0,0,0.75)',
+        padding: 5, // Logical pixels
+        lineHeightPadding: 4 // Logical pixels
+    };
+
+    /**
      * Creates an instance of RenderingEngine.
      * @param {HTMLCanvasElement} canvas - The HTML canvas element to render to.
-     * @param {import('../core/HatchEngine.js').default} engine - A reference to the HatchEngine instance.
-     * @param {Object} [options={}] - Configuration options for the renderer.
-     * @param {Object} [options.rendererOptions={alpha: true}] - Options passed to `canvas.getContext('2d')`. Defaults to `{alpha: true}`.
+     * @param {import('../core/HatchEngine.js').HatchEngine} engine - A reference to the HatchEngine instance.
+     * @param {object} [options={}] - Configuration options for the renderer.
+     * @param {object} [options.rendererOptions={alpha: true}] - Options passed to `canvas.getContext('2d')`.
+     *                                                          Defaults to `{alpha: true}`.
      * @param {boolean} [options.scaleToDevicePixelRatio=true] - Whether to scale the canvas for high DPI displays.
-     * @param {boolean} [options.showDebugInfo=false] - Whether to display debug information by default. This can be overridden by engine config.
-     * @throws {Error} If the 2D rendering context cannot be obtained from the canvas.
+     *                                                           This is sourced from `hatchConfig.renderer.scaleToDevicePixelRatio`.
+     * @param {boolean} [options.showDebugInfo=false] - Whether to display debug information by default.
+     *                                                  This can be overridden by engine config (`hatchConfig.debug.showStats` or `hatchConfig.renderer.debug.showStats`).
+     * @throws {Error} If the 2D rendering context cannot be obtained from the canvas (propagated via ErrorHandler).
      */
     constructor(canvas, engine, options = {}) {
-        /** @type {import('../core/HatchEngine.js').default} */
+        /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
         /** @type {HTMLCanvasElement} */
         this.canvas = canvas;
-        /** @type {?CanvasRenderingContext2D} */
+        /** @type {CanvasRenderingContext2D | null} */
         this.context = null;
 
         try {
             const contextOptions = options.rendererOptions !== undefined ? options.rendererOptions : { alpha: true };
             this.context = this.canvas.getContext('2d', contextOptions);
             if (!this.context) {
-                throw new Error("RenderingEngine: Failed to get 2D rendering context. Rendering will not be possible.");
+                // This error is critical for the rendering engine's operation.
+                const err = new Error("RenderingEngine: Failed to get 2D rendering context. Rendering will not be possible.");
+                if (this.engine && this.engine.errorHandler) {
+                    this.engine.errorHandler.critical(err.message, {
+                        component: 'RenderingEngine',
+                        method: 'constructor',
+                        originalError: err
+                    });
+                } else {
+                    console.error("Critical Error: RenderingEngine failed to initialize context and no errorHandler is available.", err);
+                    throw err;
+                }
             }
-        } catch (error) {
+        } catch (error) { // Catch any other error during context creation
             if (this.engine && this.engine.errorHandler) {
-                // .handle with critical:true is expected to call .critical, which throws.
-                this.engine.errorHandler.handle(error, { phase: "RenderingEngine Constructor", originalError: error }, true);
+                this.engine.errorHandler.critical(error.message, {
+                    component: 'RenderingEngine',
+                    method: 'constructor.getContext',
+                    originalError: error
+                });
             } else {
-                // If no error handler, log and re-throw the original error.
-                console.error("Critical Error: RenderingEngine failed to initialize context and no errorHandler is available.", error);
+                console.error("Critical Error: RenderingEngine failed during getContext and no errorHandler is available.", error);
                 throw error;
             }
-            // If errorHandler.handle with critical:true didn't throw, the error would be swallowed.
-            // However, our ErrorHandler.critical does throw, so this line is typically not reached if errorHandler is present.
-            // If errorHandler is NOT present, the else block above throws.
         }
 
         /** @type {number} */
-        this.width = this.canvas.width; // Logical width from config
+        this.width = this.canvas.width;
         /** @type {number} */
-        this.height = this.canvas.height; // Logical height from config
+        this.height = this.canvas.height;
 
-        /** @type {number} */
-        this.pixelRatio = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1; // Default to 1 if window or devicePixelRatio is not available
-
-        if (this.pixelRatio > 1 && options.scaleToDevicePixelRatio !== false) {
-            console.log(`RenderingEngine: DevicePixelRatio: ${this.pixelRatio}. Adjusting canvas for high DPI.`);
-            this.canvas.style.width = `${this.width}px`;
-            this.canvas.style.height = `${this.height}px`;
-            this.canvas.width = Math.floor(this.width * this.pixelRatio);
-            this.canvas.height = Math.floor(this.height * this.pixelRatio);
-            this.context.scale(this.pixelRatio, this.pixelRatio);
-        } else {
-            console.log(`RenderingEngine: DevicePixelRatio is ${this.pixelRatio} or DPI scaling disabled. Canvas dimensions: ${this.width}x${this.height}`);
-        }
+        this._initializeCanvasDPIScaling(options);
 
         /** @type {Camera} */
-        this.camera = new Camera(this.width, this.height); // Pass logical dimensions
+        this.camera = new Camera(this.width, this.height);
 
         /** @type {{drawCalls: number, objectsRendered: number, frameTime: number}} */
         this.renderStats = { drawCalls: 0, objectsRendered: 0, frameTime: 0 };
 
         /** @type {boolean} */
-        this.showDebugInfo = options.showDebugInfo || false; // Default from RE options
+        this.showDebugInfo = options.showDebugInfo || false;
         /** @type {Array<Object>} */
         this.drawables = [];
 
-        console.log(`RenderingEngine: Initialized. Logical: ${this.width}x${this.height}. Backing: ${this.canvas.width}x${this.canvas.height}. DPR: ${this.pixelRatio}.`);
+        // console.log(`RenderingEngine: Initialized. Logical: ${this.width}x${this.height}. Backing: ${this.canvas.width}x${this.canvas.height}. DPR: ${this.pixelRatio}.`);
+        this.engine.errorHandler.info(`RenderingEngine Initialized. Logical: ${this.width}x${this.height}, Backing: ${this.canvas.width}x${this.canvas.height}, DPR: ${this.pixelRatio}.`, {
+            component: 'RenderingEngine',
+            method: 'constructor'
+        });
     }
 
     /**
@@ -112,9 +141,10 @@ class RenderingEngine {
                 this.drawables.push(drawable);
             }
         } else {
-            this.engine.errorHandler.warn("RenderingEngine.add: Attempted to add an invalid or non-renderable object.", {
-                context: "RenderingEngine.add",
-                providedObject: drawable
+            this.engine.errorHandler.warn("Attempted to add an invalid or non-renderable object.", {
+                component: 'RenderingEngine',
+                method: 'add',
+                params: { providedObject: typeof drawable } // stringify or summarize drawable if too large
             });
         }
     }
@@ -160,10 +190,12 @@ class RenderingEngine {
                     drawable.render(this.context);
                     objectsRenderedThisFrame++;
                 } catch (error) {
-                    this.engine.errorHandler.handle(error, {
-                        context: "RenderingEngine.renderManagedDrawables: Error in drawable.render()",
-                        drawableType: drawable.constructor?.name || typeof drawable.type || typeof drawable
-                    }, false); // Not necessarily critical for the whole engine to stop
+                    this.engine.errorHandler.error("Error in drawable.render()", {
+                        component: 'RenderingEngine',
+                        method: 'renderManagedDrawables',
+                        params: { drawableType: drawable.constructor?.name || typeof drawable.type || typeof drawable },
+                        originalError: error
+                    }); // Not necessarily critical for the whole engine to stop
                 }
             }
         }
@@ -219,31 +251,39 @@ class RenderingEngine {
      * @param {...number} args - Arguments for `drawImage` (dx, dy, [dWidth, dHeight], [sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight]). World space.
      */
     drawImage(image, ...args) {
-        if (image && image instanceof HTMLImageElement && (image.naturalWidth === 0 || image.naturalHeight === 0)) {
-            if (image.complete) { // Only warn if it's supposedly loaded but has no dimensions
-                 console.warn(`RenderingEngine.drawImage: Attempting to draw image with zero dimensions (naturalWidth: ${image.naturalWidth}, naturalHeight: ${image.naturalHeight}). Source: ${image.src}`);
-            }
-            // Do not attempt to draw if dimensions are zero, as it might cause errors or be pointless.
-            // However, the current structure with try...catch will handle errors if drawImage is called.
-            // For now, just warning. The problem statement implies only adding a check and warning.
+        if (image && image instanceof HTMLImageElement && (image.naturalWidth === 0 || image.naturalHeight === 0) && image.complete) {
+            this.engine.errorHandler.warn(
+                `Attempting to draw image with zero dimensions (naturalWidth: ${image.naturalWidth}, naturalHeight: ${image.naturalHeight}).`, {
+                component: 'RenderingEngine',
+                method: 'drawImage',
+                params: { imageSrc: image.src }
+            });
+            // Optionally return here if drawing zero-dimension images is undesirable
         }
 
         try {
-            // It's important that image.complete is true for HTMLImageElement for reliable drawing.
-            // The Sprite class already checks this. If drawing directly, caller should ensure.
             if (image && (image instanceof HTMLImageElement ? image.complete : true)) {
                 this.context.drawImage(image, ...args);
                 this.renderStats.drawCalls++;
             } else if (image && image instanceof HTMLImageElement && !image.complete) {
-                // This case should ideally be handled by asset loading or pre-draw checks.
-                console.warn(`RenderingEngine.drawImage: Image not yet complete. Source: ${image.src}`);
+                this.engine.errorHandler.warn(
+                    'Attempting to draw an image that is not yet complete.', {
+                    component: 'RenderingEngine',
+                    method: 'drawImage',
+                    params: { imageSrc: image.src }
+                });
             }
         } catch (error) {
-             this.engine.errorHandler.handle(error, {
-                context: "RenderingEngine.drawImage",
-                imageLoaded: image && (image.complete !== undefined ? image.complete : true),
-                args: args.map(String) // Convert args to string for robust stringify
-            }, false); // Not necessarily critical if one image fails
+             this.engine.errorHandler.error('Failed to execute drawImage.', {
+                component: 'RenderingEngine',
+                method: 'drawImage',
+                params: {
+                    imageSrc: image ? image.src : 'unknown',
+                    imageComplete: image && (image.complete !== undefined ? image.complete : true),
+                    args: args.map(String)
+                },
+                originalError: error
+            }); // Not necessarily critical if one image fails
         }
     }
 
@@ -268,22 +308,81 @@ class RenderingEngine {
 
     /**
      * Draws debug information overlay (FPS, stats, etc.) in screen space.
-     * Called by `HatchEngine._loop` if debug info is enabled.
+     * Initializes DPI scaling for the canvas.
+     * Adjusts canvas physical dimensions and scales the rendering context based on `window.devicePixelRatio`
+     * if `options.scaleToDevicePixelRatio` is not false.
+     * @param {object} options - Options passed to the constructor, may include `scaleToDevicePixelRatio`.
+     * @private
      */
-    drawDebugInfo() {
+    _initializeCanvasDPIScaling(options) {
+        /** @type {number} The detected or default device pixel ratio. */
+        this.pixelRatio = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
+
+        if (this.pixelRatio > 1 && options.scaleToDevicePixelRatio !== false) {
+            this.engine.errorHandler.info(`DevicePixelRatio: ${this.pixelRatio}. Adjusting canvas for high DPI.`, {
+                component: 'RenderingEngine',
+                method: '_initializeCanvasDPIScaling'
+            });
+            this.canvas.style.width = `${this.width}px`;
+            this.canvas.style.height = `${this.height}px`;
+            this.canvas.width = Math.floor(this.width * this.pixelRatio);
+            this.canvas.height = Math.floor(this.height * this.pixelRatio);
+            this.context.scale(this.pixelRatio, this.pixelRatio);
+        } else {
+            this.engine.errorHandler.info(`DevicePixelRatio is ${this.pixelRatio} or DPI scaling disabled. Canvas dimensions: ${this.width}x${this.height}`, {
+                component: 'RenderingEngine',
+                method: '_initializeCanvasDPIScaling'
+            });
+        }
+    }
+
+    /**
+     * Generates an array of strings containing performance-related debug information.
+     * @returns {string[]} Array of performance stat strings.
+     * @private
+     */
+    _getPerformanceDebugStrings() {
         const fps = this.engine.deltaTime > 0 ? (1 / this.engine.deltaTime).toFixed(1) : 'N/A';
         const { drawCalls, objectsRendered } = this.renderStats;
         const frameTime = this.renderStats.frameTime.toFixed(2);
-
-        const lines = [
+        return [
             `FPS: ${fps}`,
             `Frame Time: ${frameTime} ms`,
             `Draw Calls: ${drawCalls}`,
             `Objects Rendered: ${objectsRendered}`,
+        ];
+    }
+
+    /**
+     * Generates an array of strings containing camera-related debug information.
+     * @returns {string[]} Array of camera stat strings.
+     * @private
+     */
+    _getCameraDebugStrings() {
+        return [
             `Camera: X:${this.camera.x.toFixed(0)}, Y:${this.camera.y.toFixed(0)}, Zoom:${this.camera.zoom.toFixed(2)}`,
+        ];
+    }
+
+    /**
+     * Generates an array of strings containing canvas dimension information.
+     * @returns {string[]} Array of canvas dimension strings.
+     * @private
+     */
+    _getCanvasDebugStrings() {
+        return [
             `Canvas: ${this.width}x${this.height} (Log) / ${this.canvas.width}x${this.canvas.height} (Back)`,
         ];
+    }
 
+    /**
+     * Generates an array of strings containing input-related debug information.
+     * Requires `this.engine.inputManager` to be available.
+     * @returns {string[]} Array of input stat strings, or an empty array if InputManager is not present.
+     * @private
+     */
+    _getInputDebugStrings() {
+        const lines = [];
         if (this.engine.inputManager) {
             const mousePos = this.engine.inputManager.getMousePosition();
             const worldMousePos = this.camera.screenToWorld(mousePos.x, mousePos.y);
@@ -293,48 +392,66 @@ class RenderingEngine {
             if (this.engine.inputManager.isMouseButtonPressed(0)) pressedInfo += "LMB ";
             if (this.engine.inputManager.isMouseButtonPressed(1)) pressedInfo += "MMB ";
             if (this.engine.inputManager.isMouseButtonPressed(2)) pressedInfo += "RMB ";
-            if (this.engine.inputManager.isKeyPressed("Space")) pressedInfo += "Space ";
+            if (this.engine.inputManager.isKeyPressed("Space")) pressedInfo += "Space "; // Example key
             if (pressedInfo) lines.push(`Pressed: ${pressedInfo.trim()}`);
         }
+        return lines;
+    }
+
+    /**
+     * Generates an array of strings containing current scene information.
+     * Requires `this.engine.sceneManager` to be available.
+     * @returns {string[]} Array of scene stat strings, or an empty array if SceneManager is not present or no scene is active.
+     * @private
+     */
+    _getSceneDebugStrings() {
         if (this.engine.sceneManager && this.engine.sceneManager.currentSceneName) {
-            lines.push(`Scene: ${this.engine.sceneManager.currentSceneName}`);
+            return [`Scene: ${this.engine.sceneManager.currentSceneName}`];
         }
+        return [];
+    }
+
+    /**
+     * Draws the debug information overlay onto the canvas.
+     * This includes performance statistics, camera and canvas information, input state, and current scene.
+     * The appearance of the overlay can be customized via `hatch.config.yaml` (renderer.debug or debug sections).
+     */
+    drawDebugInfo() {
+        const lines = [
+            ...this._getPerformanceDebugStrings(),
+            ...this._getCameraDebugStrings(),
+            ...this._getCanvasDebugStrings(),
+            ...this._getInputDebugStrings(),
+            ...this._getSceneDebugStrings(),
+        ];
 
         this.context.save();
         this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0); // Screen space for overlay
 
-        // Configurable debug styles with defaults
-        const debugConfig = this.engine.hatchConfig?.renderer?.debug || this.engine.hatchConfig?.debug || {};
-
-        const fontFamily = debugConfig.fontFamily || 'Arial';
-        const baseFontSize = debugConfig.fontSize || 12; // Logical pixels
-        const fontColor = debugConfig.fontColor || 'white';
-        const bgColor = debugConfig.bgColor || 'rgba(0,0,0,0.75)';
-        const padding = debugConfig.padding || 5; // Logical pixels
-        const lineHeightPadding = debugConfig.lineHeightPadding || 4; // Logical pixels
+        const hatchConfigDebugOptions = this.engine.hatchConfig?.renderer?.debug || this.engine.hatchConfig?.debug || {};
+        const style = { ...RenderingEngine._defaultDebugStyles, ...hatchConfigDebugOptions };
 
         // Apply pixelRatio for actual rendering dimensions
-        const actualFontSize = baseFontSize / this.pixelRatio;
-        const actualPadding = padding / this.pixelRatio;
-        const actualLineHeight = (baseFontSize + lineHeightPadding) / this.pixelRatio;
+        const actualFontSize = style.fontSize / this.pixelRatio;
+        const actualPadding = style.padding / this.pixelRatio;
+        const actualLineHeight = (style.fontSize + style.lineHeightPadding) / this.pixelRatio;
 
-        const x = actualPadding + (5 / this.pixelRatio); // Keep small offset from edge
-        let currentY = actualPadding + (10 / this.pixelRatio); // Keep small offset from top
+        const x = actualPadding + (5 / this.pixelRatio);
+        let currentY = actualPadding + (10 / this.pixelRatio);
 
-        this.context.font = `${actualFontSize}px ${fontFamily}`;
+        this.context.font = `${actualFontSize}px ${style.fontFamily}`;
 
         let maxWidth = 0;
         for (const line of lines) {
             maxWidth = Math.max(maxWidth, this.context.measureText(line).width);
         }
-        // backgroundWidth and backgroundHeight are in scaled pixels (already divided by pixelRatio implicitly through context measures)
         const backgroundWidth = maxWidth + actualPadding * 2;
         const backgroundHeight = lines.length * actualLineHeight + actualPadding * 1.5;
 
-        this.context.fillStyle = bgColor;
+        this.context.fillStyle = style.bgColor;
         this.context.fillRect(x - actualPadding, currentY - actualPadding, backgroundWidth, backgroundHeight);
 
-        this.context.fillStyle = fontColor;
+        this.context.fillStyle = style.fontColor;
         this.context.textAlign = 'left';
         this.context.textBaseline = 'top';
 
