@@ -1,6 +1,7 @@
-import { HatchEngine } from 'hatch-engine/core/HatchEngine.js';
+import { HatchEngine } from '/engine/core/HatchEngine.js'; // Adjusted path
 // AssetManager, InputManager, RenderingEngine, SceneManager are now auto-instantiated by HatchEngine.init()
 import TestScene from './scenes/TestScene.js';
+import { GridTestScene } from './scenes/GridTestScene.js'; // Import new scene
 
 console.log("Hatch game starting...");
 
@@ -9,48 +10,43 @@ console.log("Hatch game starting...");
 
 async function gameMain() { // Renamed to avoid conflict with outer 'main'
     // Load project configuration using the static method from HatchEngine
-    const hatchConfig = await HatchEngine.loadProjectConfig('/hatch.config.yaml');
-    // Note: '/hatch.config.yaml' is the default, so could be HatchEngine.loadProjectConfig()
+    const projectConfig = await HatchEngine.loadProjectConfig('/hatch.config.yaml');
+    if (!projectConfig) {
+        console.error("Failed to load project configuration. Cannot start engine.");
+        return;
+    }
 
-    const engineConfig = {
-        canvasId: hatchConfig.canvasId || 'gameCanvas',
-        width: hatchConfig.gameWidth || 800,
-        height: hatchConfig.gameHeight || 600,
-        hatchConfig: hatchConfig // Pass the full config to the engine
-    };
-
-    const engine = new HatchEngine(engineConfig);
+    const engine = new HatchEngine(projectConfig); // Pass projectConfig directly
 
     try {
         engine.init(); // Sets up engine.canvas, engine.ctx, and core managers
 
-        // Core managers (assetManager, inputManager, renderingEngine, sceneManager)
-        // are now automatically instantiated within engine.init().
-
-        // Load asset manifest if specified in config
-        // Ensure engine.assetManager is available (it should be after init())
-        if (hatchConfig.assetManifest && engine.assetManager) {
+        // Load the global asset manifest if specified in config
+        if (engine.hatchConfig && engine.hatchConfig.assetManifest) {
+            await engine.assetManager.loadManifest(engine.hatchConfig.assetManifest);
+            engine.errorHandler.info(`Asset manifest '${engine.hatchConfig.assetManifest}' loading initiated.`, {component: 'main'});
+        } else {
+            // Manually load simpleAtlas if no global manifest or if it's not included there.
+            engine.errorHandler.warn("No global assetManifest specified in hatch.config.yaml. Attempting manual load for GridTestScene assets.", {component: 'main'});
             try {
-                // AssetManager.loadManifest now supports string paths directly
-                await engine.assetManager.loadManifest(hatchConfig.assetManifest);
-                console.log(`Asset manifest '${hatchConfig.assetManifest}' loaded or loading initiated.`);
+                await engine.assetManager.getSpriteAtlas('simpleAtlas', 'assets/data/simple_atlas.json', 'assets/images/simple_atlas.png');
+                engine.errorHandler.info("Manually loaded 'simpleAtlas' for GridTestScene.", {component: 'main'});
             } catch (e) {
-                console.error("Failed to load asset manifest:", e);
-                engine.errorHandler.error("Failed to load asset manifest", { path: hatchConfig.assetManifest, error: e });
+                engine.errorHandler.error("Failed to manually load 'simpleAtlas'. GridTestScene might not render sprites correctly.", {component: 'main', error: e});
             }
         }
 
-        // Add and switch to the initial scene
-        // Register the TestScene class; SceneManager will instantiate it on first switch.
-        if (engine.sceneManager && TestScene) {
-            engine.sceneManager.add(hatchConfig.initialScene || 'TestScene', TestScene);
-            await engine.sceneManager.switchTo(hatchConfig.initialScene || 'TestScene');
-            console.log(`Switched to initial scene: ${hatchConfig.initialScene || 'TestScene'}`);
-        } else {
-            const missingComponent = !engine.sceneManager ? "SceneManager" : "TestScene";
-            engine.errorHandler.critical(`Failed to initialize scenes: ${missingComponent} is not available.`);
-            return; // Stop if scene setup cannot proceed
+        // Add scenes
+        if (TestScene) { // Keep TestScene if it exists and is imported
+            engine.sceneManager.add('test', TestScene);
         }
+        engine.sceneManager.add('gridTest', GridTestScene); // Add new scene
+
+        // Switch to the desired scene
+        // You can change 'gridTest' to 'test' or projectConfig.initialScene if needed
+        const initialSceneName = projectConfig.initialScene === 'gridTest' || !TestScene ? 'gridTest' : projectConfig.initialScene || 'gridTest';
+        await engine.sceneManager.switchTo(initialSceneName);
+        engine.errorHandler.info(`Switched to initial scene: ${initialSceneName}`, {component: 'main'});
 
         console.log("Engine initialized from main.js with managers and scene.");
         engine.start();

@@ -33,9 +33,9 @@ class MouseInput {
         if (!targetElement || typeof targetElement.getBoundingClientRect !== 'function') {
             throw new Error("MouseInput constructor: A valid HTML targetElement with getBoundingClientRect is required.");
         }
-        if (!engine || !engine.config || !engine.config.engine ||
-            typeof engine.config.engine.width !== 'number' || typeof engine.config.engine.height !== 'number') {
-            throw new Error("MouseInput constructor: A valid engine instance with engine.config.engine.width/height is required.");
+        // Updated to check engine.width and engine.height directly as per HatchEngine structure
+        if (!engine || typeof engine.width !== 'number' || typeof engine.height !== 'number') {
+            throw new Error("MouseInput constructor: A valid engine instance with width/height properties is required.");
         }
 
         /** @type {HTMLElement} */
@@ -115,12 +115,11 @@ class MouseInput {
     _onMouseMove(event) {
         const rect = this.targetElement.getBoundingClientRect();
 
-        // Logical dimensions from engine config (actual game resolution)
-        const canvasLogicalWidth = this.engine.config.engine.width;
-        const canvasLogicalHeight = this.engine.config.engine.height;
+        // Logical dimensions from engine instance directly
+        const canvasLogicalWidth = this.engine.width;
+        const canvasLogicalHeight = this.engine.height;
 
         // rect.width and rect.height are the CSS display size of the canvas element.
-        // These might differ from logicalWidth/Height if the canvas is scaled via CSS or due to DPI adjustments.
         const scaleX = rect.width > 0 ? canvasLogicalWidth / rect.width : 1;
         const scaleY = rect.height > 0 ? canvasLogicalHeight / rect.height : 1;
 
@@ -170,57 +169,39 @@ class MouseInput {
      * @private
      */
     _getMouseWorldPosition() {
-        if (this.engine && this.engine.renderingEngine && this.engine.renderingEngine.mainCamera &&
-            typeof this.engine.renderingEngine.mainCamera.screenToWorld === 'function') {
+        if (this.engine && this.engine.renderingEngine && this.engine.renderingEngine.camera &&
+            typeof this.engine.renderingEngine.camera.screenToWorld === 'function') {
             // Pass the logical canvas coordinates (this.x, this.y) to screenToWorld
-            return this.engine.renderingEngine.mainCamera.screenToWorld(this.x, this.y);
+            return this.engine.renderingEngine.camera.screenToWorld(this.x, this.y);
         }
-        // Optionally log a warning if camera is unavailable, though frequent logs might be noisy.
-        // Consider if this case should be handled by engine's error handler with a specific level.
-        // console.warn('MouseInput: Main camera or screenToWorld method not available for coordinate conversion.');
         return null;
     }
 
     /**
-     * Gets the mouse position in grid coordinates by converting current logical mouse position
-     * to world coordinates, then to grid coordinates.
-     * @returns {{x: number, y: number} | null} Grid coordinates {x, y} or null if conversion is not possible
-     * (e.g., no camera, no gridManager, or error during conversion).
+     * Gets the mouse position in grid coordinates based on the engine's current GridManager.
+     * @returns {{gridX: number, gridY: number} | null} Grid coordinates {gridX, gridY}
+     *          or null if no active GridManager or mouse is outside the grid.
      */
     getMouseGridPosition() {
-        const worldPos = this._getMouseWorldPosition();
-        if (!worldPos) {
-            // If world position couldn't be determined (e.g., no camera), cannot proceed.
-            return null;
+        if (this.engine && this.engine.gridManager && typeof this.engine.gridManager.screenToGrid === 'function') {
+            // this.x and this.y are already scaled logical canvas coordinates
+            return this.engine.gridManager.screenToGrid(this.x, this.y);
         }
-
-        if (this.engine && this.engine.gridManager && typeof this.engine.gridManager.worldToGrid === 'function') {
-            try {
-                // Pass the obtained world coordinates to worldToGrid
-                return this.engine.gridManager.worldToGrid(worldPos.worldX, worldPos.worldY);
-            } catch (e) {
-                // Log error if conversion itself fails
-                if (this.engine.errorHandler) {
-                    this.engine.errorHandler.error('MouseInput: Error converting world to grid coordinates.', { component: 'MouseInput', method: 'getMouseGridPosition', originalError: e });
-                } else {
-                    console.error('MouseInput: Error converting world to grid coordinates.', e);
-                }
-                return null;
-            }
-        } else {
-            // GridManager or its worldToGrid method is not available.
-            // This might be a normal state if GridManager is optional or not yet initialized.
-            // console.debug('MouseInput: GridManager not available for worldToGrid conversion.');
-            return null;
-        }
+        // this.engine.errorHandler.debug('MouseInput.getMouseGridPosition: No active GridManager on engine or screenToGrid method missing.', { component: 'MouseInput' });
+        return null;
     }
 
     /**
-     * Helper to emit grid-related mouse events.
-     * This method fetches world and grid positions and emits an event if both are valid.
-     * @param {string} eventName - The name of the event to emit (e.g., InputEvents.GRID_MOUSEDOWN).
-     * @param {MouseEvent} rawEvent - The original DOM mouse event.
-     * @param {number} [button] - The mouse button code (for mousedown/mouseup events).
+     * Helper to emit grid-related mouse events via the engine's event bus.
+     * This method calculates the mouse's grid position. If the mouse is over a valid
+     * grid cell (according to the active `engine.gridManager`), it emits the specified event.
+     * The event payload includes grid coordinates (`gridX`, `gridY`),
+     * logical screen coordinates (`screenX`, `screenY`), the original DOM event (`rawEvent`),
+     * and optionally the mouse button code.
+     * @param {string} eventName - The name of the event to emit (e.g., `InputEvents.GRID_MOUSEDOWN`).
+     * @param {MouseEvent} rawEvent - The original DOM MouseEvent.
+     * @param {number} [button] - The mouse button code (e.g., 0 for left, 1 for middle, 2 for right),
+     *                            relevant for mousedown and mouseup events.
      * @private
      */
     _emitGridMouseEvent(eventName, rawEvent, button) {
@@ -233,32 +214,26 @@ class MouseInput {
 
         // Note: getMouseGridPosition internally calls _getMouseWorldPosition.
         // So, we get both grid and potentially world coordinates from its logic.
-        const gridPos = this.getMouseGridPosition();
+        const gridPos = this.getMouseGridPosition(); // This now returns {gridX, gridY} or null
         if (!gridPos) {
-            // Not over a valid grid cell, or grid/world coordinates couldn't be determined.
             return;
         }
 
-        // To include worldPos in the payload, we need to call _getMouseWorldPosition again.
-        // This is slightly redundant but ensures payload consistency if getMouseGridPosition changes.
-        // Alternatively, getMouseGridPosition could return an object containing both.
-        const worldPos = this._getMouseWorldPosition(); // Call it again to get worldPos for the payload
-        if (!worldPos) {
-             // This should ideally not happen if gridPos was successfully obtained,
-             // as getMouseGridPosition depends on _getMouseWorldPosition.
-             // However, as a safeguard:
-             // console.warn("MouseInput: World position became null after grid position was determined. Aborting event emit.");
-             return;
-        }
-
-
         const eventPayload = {
-            gridX: gridPos.x,
-            gridY: gridPos.y,
-            worldX: worldPos.worldX,
-            worldY: worldPos.worldY,
-            rawEvent: rawEvent, // The original DOM event
+            gridX: gridPos.gridX, // Use gridX from the new getMouseGridPosition
+            gridY: gridPos.gridY, // Use gridY
+            screenX: this.x,      // Logical canvas X
+            screenY: this.y,      // Logical canvas Y
+            rawEvent: rawEvent,
         };
+
+        // Optionally, re-add world coordinates if strictly needed by consumers,
+        // but screenToGrid in GridManager implies it handles the necessary conversions.
+        // const worldPos = this._getMouseWorldPosition();
+        // if (worldPos) {
+        // eventPayload.worldX = worldPos.worldX;
+        // eventPayload.worldY = worldPos.worldY;
+        // }
 
         if (button !== undefined) {
             eventPayload.button = button;

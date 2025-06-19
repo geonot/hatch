@@ -140,6 +140,36 @@ class RenderingEngine {
     }
 
     /**
+     * Generates an array of strings containing mouse grid coordinate information.
+     * Requires `this.engine.inputManager` and `this.engine.gridManager` to be available.
+     * @returns {string[]} Array of mouse grid coordinate strings.
+     * @private
+     */
+    _getMouseGridDebugStrings() {
+        const lines = [];
+        if (this.engine && this.engine.inputManager && this.engine.gridManager &&
+            typeof this.engine.gridManager.screenToGrid === 'function') {
+            const mousePos = this.engine.inputManager.getMousePosition();
+            if (mousePos) { // Ensure mousePos is valid
+                const gridCoords = this.engine.gridManager.screenToGrid(mousePos.x, mousePos.y);
+                if (gridCoords) {
+                    lines.push(`Mouse Grid: (${gridCoords.gridX}, ${gridCoords.gridY})`);
+                } else {
+                    lines.push("Mouse Grid: (Off-grid)");
+                }
+            } else {
+                lines.push("Mouse Grid: (Mouse pos N/A)");
+            }
+        } else if (this.engine && this.engine.gridManager) {
+            lines.push("Mouse Grid: (InputManager N/A for coords)");
+        } else {
+            // Optionally show "Mouse Grid: (No GridManager)" or nothing
+            // lines.push("Mouse Grid: (No GridManager)");
+        }
+        return lines;
+    }
+
+    /**
      * Adds a drawable object to the rendering queue for the current frame.
      * A drawable object must have a `render(context)` method and optionally a `visible` property.
      * @param {Object} drawable - The object to add. Must implement `render(context: CanvasRenderingContext2D): void`.
@@ -470,7 +500,8 @@ class RenderingEngine {
             ...this._getPerformanceDebugStrings(),
             ...this._getCameraDebugStrings(),
             ...this._getCanvasDebugStrings(),
-            ...this._getInputDebugStrings(),
+            ...this._getInputDebugStrings(), // This one already shows screen/world mouse
+            ...this._getMouseGridDebugStrings(), // Add the new lines here
             ...this._getSceneDebugStrings(),
         ];
 

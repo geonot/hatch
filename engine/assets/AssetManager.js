@@ -17,6 +17,7 @@
  *                                                 keyed by asset name. This prevents duplicate load attempts.
  */
 import { AssetTypes } from '../core/Constants.js';
+import { SpriteAtlas } from './SpriteAtlas.js';
 
 class AssetManager {
     /**
@@ -134,28 +135,29 @@ class AssetManager {
      *
      * @param {Object} assetInfo - Information about the asset to load.
      * @param {string} assetInfo.name - A unique name to identify and cache the asset.
-     * @param {string} assetInfo.path - The path or URL to the asset file.
+     * @param {string} [assetInfo.path] - The path or URL to the asset file (used for IMAGE, AUDIO, JSON).
+     * @param {string} [assetInfo.jsonPath] - Path to JSON file for SpriteAtlas.
+     * @param {string} [assetInfo.imagePath] - Path to image file for SpriteAtlas.
      * @param {AssetTypes[keyof AssetTypes]} assetInfo.type - The type of asset to load (e.g., `AssetTypes.IMAGE`).
      * @returns {Promise<any>} A promise that resolves with the loaded asset.
      *                         The type of the resolved asset depends on `assetInfo.type`.
      *                         Returns `Promise.resolve(null)` for unsupported asset types.
-     *                         Throws an error via ErrorHandler.critical if loading fails.
+     *                         The promise will reject if loading fails, after the error has been logged
+     *                         via `this.engine.errorHandler.error()`.
      * @async
      */
-    async loadAsset({ name, path, type }) {
+    async loadAsset(assetInfo) {
+        const { name, path, type } = assetInfo;
+
         if (typeof name !== 'string' || name.trim() === '') {
             const errorMsg = "AssetManager.loadAsset: 'name' must be a non-empty string.";
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type } });
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: assetInfo });
             return Promise.reject(new Error(errorMsg));
         }
-        if (typeof path !== 'string' || path.trim() === '') {
-            const errorMsg = "AssetManager.loadAsset: 'path' must be a non-empty string.";
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type } });
-            return Promise.reject(new Error(errorMsg));
-        }
+
         if (typeof type !== 'string' || !Object.values(AssetTypes).includes(type)) {
             const errorMsg = `AssetManager.loadAsset: 'type' must be a valid AssetType. Received: ${type}`;
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: { name, path, type }, validTypes: Object.values(AssetTypes) });
+            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: assetInfo, validTypes: Object.values(AssetTypes) });
             return Promise.reject(new Error(errorMsg));
         }
 
@@ -174,20 +176,44 @@ class AssetManager {
         // Ensure type is compared against AssetTypes constants
         switch (type) {
             case AssetTypes.IMAGE:
+                if (typeof path !== 'string' || path.trim() === '') {
+                    const errorMsg = "AssetManager.loadAsset (IMAGE): 'path' must be a non-empty string.";
+                    this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: assetInfo });
+                    return Promise.reject(new Error(errorMsg));
+                }
                 this.engine.errorHandler.info(`Loading image asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.IMAGE, params: { name, path } });
                 loadPromise = this._loadImage(path, name);
                 break;
             case AssetTypes.AUDIO:
+                if (typeof path !== 'string' || path.trim() === '') {
+                    const errorMsg = "AssetManager.loadAsset (AUDIO): 'path' must be a non-empty string.";
+                    this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: assetInfo });
+                    return Promise.reject(new Error(errorMsg));
+                }
                 this.engine.errorHandler.info(`Loading audio asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.AUDIO, params: { name, path } });
                 loadPromise = this._loadAudio(path, name);
                 break;
             case AssetTypes.JSON:
+                if (typeof path !== 'string' || path.trim() === '') {
+                    const errorMsg = "AssetManager.loadAsset (JSON): 'path' must be a non-empty string.";
+                    this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'loadAsset', params: assetInfo });
+                    return Promise.reject(new Error(errorMsg));
+                }
                 this.engine.errorHandler.info(`Loading json asset: '${name}' from path: ${path}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.JSON, params: { name, path } });
                 loadPromise = this._loadJSON(path, name);
                 break;
+            case AssetTypes.SPRITE_ATLAS:
+                if (!assetInfo.jsonPath || !assetInfo.imagePath) {
+                    this.engine.errorHandler.error(`AssetManager: SpriteAtlas '${name}' requires 'jsonPath' and 'imagePath' in assetInfo.`, { component: 'AssetManager', method: 'loadAsset', params: { name }});
+                    loadPromise = Promise.reject(new Error(`SpriteAtlas '${name}' definition missing jsonPath or imagePath.`));
+                } else {
+                    this.engine.errorHandler.info(`Loading SpriteAtlas asset: '${name}' from json: ${assetInfo.jsonPath}, image: ${assetInfo.imagePath}`, { component: 'AssetManager', method: 'loadAsset', assetType: AssetTypes.SPRITE_ATLAS, params: { name } });
+                    loadPromise = this._loadSpriteAtlas(assetInfo.jsonPath, assetInfo.imagePath, name);
+                }
+                break;
             default:
                 this.engine.errorHandler.warn(`Asset type '${type}' for asset '${name}' is not currently supported. Supported types are: ${Object.values(AssetTypes).join(', ')}.`, { component: 'AssetManager', method: 'loadAsset', params: { name, type }});
-                return Promise.resolve(null); // Or reject(new Error(...))
+                return Promise.resolve(null);
         }
 
         this.promises.set(name, loadPromise);
@@ -195,23 +221,44 @@ class AssetManager {
         try {
             const asset = await loadPromise;
             this.assets.set(name, asset);
-            this.engine.errorHandler.info(`Asset '${name}' (type: ${type}) loaded successfully.`, { component: 'AssetManager', method: 'loadAsset', params: { name, type }});
+            this.engine.errorHandler.info(`Asset '${name}' (type: ${type}) loaded successfully.`, { component: 'AssetManager', method: 'loadAsset', params: assetInfo});
             return asset;
         } catch (error) {
-            // The error from _loadImage or other loaders should be an Error instance.
-            // Using critical as it logs the error and re-throws, matching previous behavior.
-            this.engine.errorHandler.critical(
-                error.message,
-                {
-                    component: 'AssetManager',
-                    method: 'loadAsset',
-                    params: { name, path, type },
-                    originalError: error
-                }
-            );
+            const errorMessage = `Failed to load asset '${name}' (type: ${type}, path: ${path || assetInfo.jsonPath || 'N/A'}). Reason: ${error.message}`;
+            this.engine.errorHandler.error(errorMessage, {
+                component: 'AssetManager',
+                method: 'loadAsset',
+                params: { name, path: path || assetInfo.jsonPath, type }, // Use assetInfo for path context if general path is not available
+                originalError: error
+            });
+            throw error; // Re-throw the error to reject the promise
         } finally {
-            // Remove the promise from the map once it has settled (either resolved or rejected).
             this.promises.delete(name);
+        }
+    }
+
+    /**
+     * Loads a SpriteAtlas asset, which consists of a JSON data file and an image file.
+     * @param {string} jsonPath - Path to the JSON atlas data file.
+     * @param {string} imagePath - Path to the atlas image file.
+     * @param {string} name - Unique name for this atlas asset.
+     * @returns {Promise<SpriteAtlas>} A promise that resolves with the loaded SpriteAtlas instance.
+     * @private
+     */
+    async _loadSpriteAtlas(jsonPath, imagePath, name) {
+        try {
+            const jsonPromise = this._loadJSON(jsonPath, `${name}_json`);
+            const imagePromise = this._loadImage(imagePath, `${name}_image`);
+
+            const [jsonData, image] = await Promise.all([jsonPromise, imagePromise]);
+
+            if (!jsonData || !image) {
+                throw new Error(`Failed to load JSON or Image for SpriteAtlas '${name}'.`);
+            }
+            return new SpriteAtlas(this.engine, jsonData, image);
+        } catch (error) {
+            this.engine.errorHandler.error(`Failed to load SpriteAtlas '${name}'. ${error.message}`, { component: 'AssetManager', method: '_loadSpriteAtlas', originalError: error });
+            throw error; // Re-throw to be caught by loadAsset
         }
     }
 
@@ -408,6 +455,23 @@ class AssetManager {
         }
         const path = `assets/data/${name}`;
         return this.loadAsset({ name, path, type: AssetTypes.JSON });
+    }
+
+    /**
+     * Loads a SpriteAtlas asset by name, requiring paths for its JSON and image components.
+     * @param {string} name - The unique name for the SpriteAtlas asset.
+     * @param {string} jsonPath - The path to the JSON definition file for the atlas.
+     * @param {string} imagePath - The path to the image file (texture) for the atlas.
+     * @returns {Promise<SpriteAtlas>} A promise that resolves with the loaded SpriteAtlas instance,
+     *                                or rejects/throws via `loadAsset` if loading fails.
+     */
+    getSpriteAtlas(name, jsonPath, imagePath) {
+       if (typeof name !== 'string' || !name.trim() || typeof jsonPath !== 'string' || !jsonPath.trim() || typeof imagePath !== 'string' || !imagePath.trim()) {
+           const errorMsg = "AssetManager.getSpriteAtlas: 'name', 'jsonPath', and 'imagePath' must be non-empty strings.";
+           this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getSpriteAtlas' });
+           return Promise.reject(new Error(errorMsg));
+       }
+       return this.loadAsset({ name, type: AssetTypes.SPRITE_ATLAS, jsonPath, imagePath });
     }
 
     /**

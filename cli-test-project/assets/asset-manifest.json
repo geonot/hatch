@@ -1,3 +1,10 @@
 {
-    "assets": []
+  "assets": [
+    {
+      "name": "simpleAtlas",
+      "type": "spriteatlas",
+      "jsonPath": "assets/data/simple_atlas.json",
+      "imagePath": "assets/images/simple_atlas.png"
+    }
+  ]
 }

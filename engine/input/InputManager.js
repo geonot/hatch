@@ -235,8 +235,8 @@ class InputManager {
     /**
      * Gets the mouse position in grid coordinates.
      * This is a convenience method that delegates to the MouseInput instance.
-     * Requires GridManager to be set up and a camera for coordinate conversion.
-     * @returns {{x: number, y: number} | null} Grid coordinates {x, y} or null if not applicable/available.
+     * Requires `engine.gridManager` to be set and have a `screenToGrid` method.
+     * @returns {{gridX: number, gridY: number} | null} Grid coordinates {gridX, gridY} or null if not applicable/available.
      */
     getMouseGridPosition() {
         if (this.mouse && typeof this.mouse.getMouseGridPosition === 'function') {
