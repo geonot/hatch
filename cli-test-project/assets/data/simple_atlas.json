@@ -1,0 +1,24 @@
+{
+  "frames": {
+    "tile_light": {
+      "frame": {"x":0,"y":0,"w":32,"h":32},
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {"x":0,"y":0,"w":32,"h":32},
+      "sourceSize": {"w":32,"h":32}
+    },
+    "tile_dark": {
+      "frame": {"x":32,"y":0,"w":32,"h":32},
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {"x":0,"y":0,"w":32,"h":32},
+      "sourceSize": {"w":32,"h":32}
+    }
+  },
+  "meta": {
+    "image": "simple_atlas.png",
+    "format": "RGBA8888",
+    "size": {"w":64,"h":32},
+    "scale": "1"
+  }
+}

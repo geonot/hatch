@@ -97,6 +97,7 @@ export const AssetTypes = {
     IMAGE: 'image',
     AUDIO: 'audio',
     JSON: 'json',
+    SPRITE_ATLAS: 'spriteatlas',
 };
 
 /**

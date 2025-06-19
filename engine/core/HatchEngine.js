@@ -12,7 +12,7 @@ import AssetManager from '../assets/AssetManager.js';
 import InputManager from '../input/InputManager.js';
 import RenderingEngine from '../rendering/RenderingEngine.js'; // Corrected path
 import SceneManager from './SceneManager.js';
-import Scene from './Scene.js';
+import { Scene } from './Scene.js';
 import AudioManager from '../audio/AudioManager.js';
 
 /**
@@ -228,6 +228,9 @@ export class HatchEngine {
         this.isRunning = false;
         /** @type {number} */
         this.lastTime = 0;
+
+        /** @type {import('../grid/GridManager.js').GridManager | null} */
+        this.gridManager = null;
 
         this.eventBus.emit(EngineEvents.CONSTRUCTED, this);
     }

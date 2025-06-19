@@ -1,293 +1,203 @@
 /**
  * @file TileManager.js
- * @description Manages the definition, creation, and rendering of tiles within a grid-based system.
- * It works in conjunction with `GridManager` for spatial organization and `AssetManager` for loading tile sprites.
+ * @description Manages tile types, tile instances on a grid, and their rendering.
  */
 
-import Tile from './Tile.js';
-import Sprite from '../rendering/Sprite.js';
+import { Tile } from './Tile.js';
+import { Sprite } from '../rendering/Sprite.js';
 
 /**
  * @class TileManager
- * @classdesc Handles the lifecycle of tiles in a game. This includes defining types of tiles
- * (e.g., 'grass', 'wall') with their properties and visual representations (sprites or colors),
- * creating instances of these tiles on a grid, and managing their rendering.
+ * @classdesc Handles the definition of tile types, creation and management of tile instances
+ * on a grid, and orchestrates their rendering.
  *
- * @property {import('../core/HatchEngine.js').default} engine - Reference to the HatchEngine.
- * @property {import('../grid/GridManager.js').default} gridManager - Manages the grid on which tiles are placed.
- * @property {import('../assets/AssetManager.js').default} assetManager - Used for loading tile sprites.
- * @property {import('../rendering/RenderingEngine.js').default} renderingEngine - Used to add tiles to the render queue.
- * @property {Map<string, Object>} tileTypes - Stores definitions for tile types, keyed by type name.
- *           Each definition includes `spritePath`, `color`, `properties`, and `zIndex`.
- * @property {Map<string, Tile>} tilesMap - Stores active `Tile` instances, keyed by a string "x,y" of their grid coordinates.
+ * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine.
+ * @property {import('../grid/GridManager.js').GridManager} gridManager - Reference to the GridManager.
+ * @property {Map<string, object>} tileTypes - Stores definitions for different tile types, keyed by name.
+ *                                             Each definition can include properties like color, solid status, sprite info, etc.
+ * @property {Map<string, Tile>} tiles - Stores tile instances, keyed by "x_y" grid coordinates.
  */
-class TileManager {
+export class TileManager {
     /**
      * Creates an instance of TileManager.
-     * @param {Object} options - Configuration options.
-     * @param {import('../core/HatchEngine.js').default} options.engine - Reference to the HatchEngine instance.
-     * @param {import('../grid/GridManager.js').default} options.gridManager - Reference to the GridManager instance
-     *        that this TileManager will operate upon.
-     * @throws {Error} If `engine` or `gridManager` is not provided.
+     * @param {import('../core/HatchEngine.js').HatchEngine} engine - The HatchEngine instance.
+     * @param {import('../grid/GridManager.js').GridManager} gridManager - The GridManager instance for this tile manager.
      */
-    constructor({ engine, gridManager }) {
-        if (!engine) {
-            throw new Error("TileManager constructor: 'engine' instance is required.");
+    constructor(engine, gridManager) {
+        if (!engine || !engine.errorHandler) {
+            throw new Error("TileManager constructor: Valid 'engine' instance with 'errorHandler' is required.");
         }
-        if (!gridManager) {
-            throw new Error("TileManager constructor: 'gridManager' instance is required.");
+        if (!gridManager || !(gridManager instanceof Object) || !gridManager.engine) { // Basic check for GridManager-like object
+            throw new Error("TileManager constructor: Valid 'gridManager' instance is required.");
         }
-
-        /** @type {import('../core/HatchEngine.js').default} */
         this.engine = engine;
-        /** @type {import('../grid/GridManager.js').default} */
         this.gridManager = gridManager;
-        /** @type {import('../assets/AssetManager.js').default} */
-        this.assetManager = engine.assetManager;
-        /** @type {import('../rendering/RenderingEngine.js').default} */
-        this.renderingEngine = engine.renderingEngine;
 
-        /** @type {Map<string, {spritePath: ?string, color: string, properties: Object}>} */
         this.tileTypes = new Map();
-        /** @type {Map<string, Tile>} */
-        this.tilesMap = new Map();
+        this.tiles = new Map(); // Using a Map to store tiles, keyed by "x_y"
 
-        this.engine.errorHandler.info("TileManager Initialized.", { component: 'TileManager', method: 'constructor' });
+        this.engine.errorHandler.info('TileManager initialized.', { component: 'TileManager' });
     }
 
     /**
-     * Defines a new type of tile that can be created.
-     * @param {string} name - The unique name for this tile type (e.g., 'grass', 'wall', 'water').
-     * @param {Object} definition - The properties defining this tile type.
-     * @param {?string} [definition.spritePath=null] - Path to the sprite image for this tile type.
-     *                                                 If null, `color` will be used. Path is relative to where game is served from.
-     * @param {string} [definition.color='gray'] - Fallback CSS color string to use if `spritePath` is null or sprite fails to load.
-     * @param {Object} [definition.properties={}] - Custom properties associated with this tile type (e.g., `{ solid: true, movementCost: 2 }`).
- * @param {number} [definition.zIndex=0] - Default zIndex for tiles of this type.
+     * Defines a new type of tile.
+     * @param {string} name - The unique name for this tile type (e.g., 'grass', 'wall').
+     * @param {object} properties - An object containing properties for this tile type.
+     *                              Example: `{ color: 'green', isSolid: false, atlasName: 'myAtlas', frameName: 'grass_01.png', zIndex: 0 }`
+     *                              `atlasName` and `frameName` are used for sprite-based tiles.
+     *                              `color` is used as a fallback or for non-sprite tiles.
+     *                              `zIndex` determines rendering order if sprites are used.
+     *                              Other custom properties (e.g., `isSolid`, `isInteractive`) can also be included.
      */
-    defineTileType(name, definition) {
+    defineTileType(name, properties) {
         if (typeof name !== 'string' || name.trim() === '') {
-            this.engine.errorHandler.error("TileManager.defineTileType: 'name' must be a non-empty string.", { component: 'TileManager', method: 'defineTileType', params: { name } });
+            this.engine.errorHandler.error("TileManager.defineTileType: 'name' must be a non-empty string.", { component: 'TileManager', method: 'defineTileType' });
             return;
         }
-        if (typeof definition !== 'object' || definition === null) {
-            this.engine.errorHandler.error(`TileManager.defineTileType: 'definition' for tile type '${name}' must be an object.`, { component: 'TileManager', method: 'defineTileType', params: { name, definition } });
+        if (typeof properties !== 'object' || properties === null) {
+            this.engine.errorHandler.error(`TileManager.defineTileType: 'properties' for type '${name}' must be an object.`, { component: 'TileManager', method: 'defineTileType' });
             return;
         }
-
-        const { spritePath = null, color = 'gray', properties = {}, zIndex = 0 } = definition;
-
-        const validatedDefinition = {
-            spritePath: (spritePath !== null && typeof spritePath !== 'string') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'spritePath' for tile type '${name}' must be a string or null. Using null.`, { component: 'TileManager', method: 'defineTileType', params: { name, spritePath } }), null) : spritePath,
-            color: (typeof color !== 'string') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'color' for tile type '${name}' must be a string. Using 'gray'.`, { component: 'TileManager', method: 'defineTileType', params: { name, color } }), 'gray') : color,
-            properties: (typeof properties !== 'object' || properties === null) ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'properties' for tile type '${name}' must be an object. Using {}.`, { component: 'TileManager', method: 'defineTileType', params: { name, properties } }), {}) : properties,
-            zIndex: (typeof zIndex !== 'number') ? (this.engine.errorHandler.warn(`TileManager.defineTileType: 'zIndex' for tile type '${name}' must be a number. Using 0.`, { component: 'TileManager', method: 'defineTileType', params: { name, zIndex } }), 0) : zIndex,
-        };
-
-
-        if (this.tileTypes.has(name)) {
-            this.engine.errorHandler.warn(`Tile type '${name}' is being redefined.`, { component: 'TileManager', method: 'defineTileType', params: { name }});
+        // Properties can now include: color, isSolid, atlasName, frameName, zIndex
+        if (!properties.color && (!properties.atlasName || !properties.frameName)) {
+             this.engine.errorHandler.warn(`Tile type '${name}' defined without a color or atlasName/frameName. It might not be renderable.`, { component: 'TileManager', method: 'defineTileType', params: {name, properties} });
         }
-
-        this.tileTypes.set(name, validatedDefinition);
-        this.engine.errorHandler.info(`Tile type '${name}' defined. Sprite: ${validatedDefinition.spritePath || 'N/A'}, Color: ${validatedDefinition.color}, zIndex: ${validatedDefinition.zIndex}, Properties: ${JSON.stringify(validatedDefinition.properties)}`, { component: 'TileManager', method: 'defineTileType', params: { name, definition: validatedDefinition }});
+        this.tileTypes.set(name, properties);
+        this.engine.errorHandler.info(`Tile type '${name}' defined.`, { component: 'TileManager', method: 'defineTileType', params: { name, properties } });
     }
 
     /**
-     * Creates a new `Tile` instance of a defined type at the specified grid coordinates.
-     * If a sprite is defined for the tile type, it attempts to load it via the `AssetManager`.
-     * The new tile is stored in `GridManager`'s data and `TileManager`'s internal map.
-     *
-     * @param {string} typeName - The name of the tile type (must be pre-defined using `defineTileType`).
-     * @param {number} gridX - The grid x-coordinate (column) for the new tile.
-     * @param {number} gridY - The grid y-coordinate (row) for the new tile.
-     * @param {object} [options={}] - Optional parameters for creating the tile.
-     * @param {number} [options.zIndex] - Specific zIndex for this tile instance, overrides type default.
-     * @returns {Promise<Tile|null>} A promise that resolves with the created `Tile` instance,
-     *                               or `null` if the position is invalid or the type is not defined.
-     *                               The promise handles asynchronous sprite loading.
-     * @async
+     * Creates a tile of a specific type at the given grid coordinates.
+     * If a tile already exists at these coordinates, it will be overwritten.
+     * If the tile type properties include `atlasName` and `frameName`, a `Sprite` instance
+     * will be created and stored in `tile.data.spriteInstance`.
+     * @param {string} typeName - The name of the tile type to create (must be predefined using `defineTileType`).
+     * @param {number} gridX - The x-coordinate in the grid where the tile will be placed.
+     * @param {number} gridY - The y-coordinate in the grid where the tile will be placed.
+     * @param {object} [initialData={}] - Optional custom data to associate with this specific tile instance.
+     *                                    This data is merged into the `Tile`'s `data` property.
+     *                                    Can also include `zIndex` to override type's default zIndex for sprites.
+     * @returns {Tile | null} The created `Tile` instance, or `null` if the tile type is not defined
+     *                        or the coordinates are out of bounds. The `Tile` object may have
+     *                        `tile.data.spriteInstance` populated if applicable.
      */
-    async createTile(typeName, gridX, gridY, options = {}) {
-        if (typeof typeName !== 'string' || typeName.trim() === '') {
-            this.engine.errorHandler.error("TileManager.createTile: 'typeName' must be a non-empty string.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY, options } });
+    createTile(typeName, gridX, gridY, initialData = {}) {
+        if (!this.tileTypes.has(typeName)) {
+            this.engine.errorHandler.error(`Tile type '${typeName}' not defined. Cannot create tile.`, { component: 'TileManager', method: 'createTile' });
             return null;
         }
-        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
-            this.engine.errorHandler.error("TileManager.createTile: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY } });
-            return null;
-        }
-
-        if (!this.gridManager.isValidGridPosition(gridX, gridY)) {
-            this.engine.errorHandler.warn(`Attempted to create tile at invalid grid position (${gridX}, ${gridY}).`, { component: 'TileManager', method: 'createTile', params: { typeName, gridX, gridY, options }});
+        if (!this.gridManager.isInBounds(gridX, gridY)) {
+            this.engine.errorHandler.warn(`Cannot create tile at (${gridX},${gridY}): Coordinates out of bounds.`, { component: 'TileManager', method: 'createTile' });
             return null;
         }
 
-        const typeDef = this.tileTypes.get(typeName);
-        if (!typeDef) {
-            const errorMessage = `Tile type '${typeName}' not defined.`;
-            this.engine.errorHandler.warn(errorMessage, {
-                component: 'TileManager',
-                method: 'createTile',
-                params: { typeName, gridX, gridY, options },
-                message: errorMessage
-            });
-            return null;
-        }
+        const tile = new Tile(typeName, gridX, gridY, initialData);
+        const key = `${gridX}_${gridY}`;
 
-        const worldPos = this.gridManager.gridToWorld(gridX, gridY); // Top-left world position
-        let tileSprite = null;
-        const zIndex = (options && typeof options.zIndex === 'number') ? options.zIndex : typeDef.zIndex;
+        const typeProps = this.getTileTypeProperties(typeName); // Already checked that typeProps exists
+        if (typeProps && typeProps.atlasName && typeProps.frameName) {
+            const atlas = this.engine.assetManager.get(typeProps.atlasName);
+            if (atlas && atlas.constructor.name === 'SpriteAtlas') {
+                const worldPos = this.gridManager.gridToWorld(gridX, gridY);
+                const zIndex = (typeProps.zIndex !== undefined) ? typeProps.zIndex : (initialData.zIndex !== undefined ? initialData.zIndex : 0);
 
-
-        if (typeDef.spritePath) {
-            // AssetManager handles caching, so use a consistent name for the asset.
-            const spriteAssetName = `tile_${typeName}_${typeDef.spritePath}`;
-            try {
-                const image = await this.assetManager.loadAsset({
-                    name: spriteAssetName,
-                    path: typeDef.spritePath,
-                    type: 'image'
+                tile.data.spriteInstance = new Sprite(this.engine, atlas, {
+                    frameName: typeProps.frameName,
+                    x: worldPos.worldX,
+                    y: worldPos.worldY,
+                    width: this.gridManager.tileWidth,
+                    height: this.gridManager.tileHeight,
+                    zIndex: zIndex
                 });
-
-                if (image) {
-                    tileSprite = new Sprite({
-                        image: image,
-                        x: 0, y: 0,
-                        width: this.gridManager.tileWidth,
-                        height: this.gridManager.tileHeight,
-                        anchorX: 0,
-                        anchorY: 0,
-                        // Sprite's zIndex can be independent or linked. For now, let tile's zIndex govern.
-                        // zIndex: zIndex // If sprite needs its own zIndex matching the tile's.
-                    });
-                } else {
-                    this.engine.errorHandler.warn(
-                        `TileManager.createTile: AssetManager returned no image for tile type '${typeName}' (path: ${typeDef.spritePath}). Using fallback color.`,
-                        { context: 'TileManager.createTile.loadAssetNull', tileType: typeName, spritePath: typeDef.spritePath }
-                    );
-                }
-            } catch (error) {
-                // AssetManager's loadAsset already calls errorHandler.critical for load failures.
-                // This warning is specifically about the TileManager's fallback behavior.
-                this.engine.errorHandler.warn(
-                    `TileManager.createTile: Failed to load sprite for tile type '${typeName}' (path: ${typeDef.spritePath}). Fallback to color. Original error: ${error.message}`,
-                    { context: 'TileManager.createTile.loadAssetError', tileType: typeName, spritePath: typeDef.spritePath, originalError: error }
-                );
+            } else {
+                this.engine.errorHandler.warn(`SpriteAtlas '${typeProps.atlasName}' not found or invalid for tile type '${typeName}' at (${gridX},${gridY}). Tile will attempt color fallback.`, {component: 'TileManager'});
             }
         }
-
-        const newTile = new Tile({
-            type: typeName,
-            gridX, gridY,
-            worldX: worldPos.x, worldY: worldPos.y,
-            width: this.gridManager.tileWidth, height: this.gridManager.tileHeight,
-            data: { ...typeDef.properties },
-            sprite: tileSprite,
-            color: tileSprite ? null : typeDef.color,
-            visible: true,
-            zIndex: zIndex // Pass the determined zIndex to the Tile constructor
-        });
-
-        this.gridManager.setTileData(gridX, gridY, newTile);
-        this.tilesMap.set(`${gridX},${gridY}`, newTile);
-
-        return newTile;
+        this.tiles.set(key, tile);
+        return tile;
     }
 
     /**
-     * Retrieves the `Tile` instance at the specified grid coordinates.
-     * The actual tile data is stored in `GridManager`.
-     * @param {number} gridX - The grid x-coordinate (column).
-     * @param {number} gridY - The grid y-coordinate (row).
-     * @returns {?Tile|any} The `Tile` instance if found, or the raw data from `GridManager`
-     *                      (which could be `null` or `undefined` if no tile or out of bounds).
+     * Retrieves the tile instance at the given grid coordinates.
+     * @param {number} gridX - The x-coordinate in the grid.
+     * @param {number} gridY - The y-coordinate in the grid.
+     * @returns {Tile | undefined} The Tile instance, or undefined if no tile exists at these coordinates.
      */
-    getTileAt(gridX, gridY) {
-        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
-            this.engine.errorHandler.error("TileManager.getTileAt: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'getTileAt', params: { gridX, gridY } });
-            return undefined;
-        }
-        return this.gridManager.getTileData(gridX, gridY);
+    getTile(gridX, gridY) {
+        const key = `${gridX}_${gridY}`;
+        return this.tiles.get(key);
     }
 
     /**
-     * Removes a tile from the specified grid coordinates.
-     * This involves clearing its data in `GridManager` and removing it from `tilesMap`.
-     * @param {number} gridX - The grid x-coordinate (column).
-     * @param {number} gridY - The grid y-coordinate (row).
+     * Removes the tile at the given grid coordinates.
+     * @param {number} gridX - The x-coordinate in the grid.
+     * @param {number} gridY - The y-coordinate in the grid.
+     * @returns {boolean} True if a tile was removed, false otherwise.
      */
     removeTile(gridX, gridY) {
-        if (typeof gridX !== 'number' || typeof gridY !== 'number') {
-            this.engine.errorHandler.error("TileManager.removeTile: 'gridX' and 'gridY' must be numbers.", { component: 'TileManager', method: 'removeTile', params: { gridX, gridY } });
-            return;
-        }
-        const tileKey = `${gridX},${gridY}`;
-        // It's better to get the tile from tilesMap directly if we are managing Tile instances there.
-        // getTileAt might return raw data if GridManager stores something other than Tile instances directly,
-        // or if TileManager doesn't populate GridManager with Tile instances (which it does).
-        const tileToRemove = this.tilesMap.get(tileKey);
-
-        if (tileToRemove) {
-            if (typeof tileToRemove.destroy === 'function') {
-                try {
-                    tileToRemove.destroy();
-                } catch (e) {
-                    this.engine.errorHandler.error(`Error destroying tile at (${gridX},${gridY}): ${e.message}`, { context: 'TileManager.removeTile.destroyTile', gridX, gridY, originalError: e });
-                }
-            }
-            this.gridManager.setTileData(gridX, gridY, null); // Clear from GridManager
-            this.tilesMap.delete(tileKey); // Clear from TileManager's map
-        } else {
-            // If tileToRemove is not in tilesMap, still ensure it's cleared from GridManager if it exists there.
-            // This handles cases where GridManager might have data not tracked by tilesMap (though ideally they are in sync).
-            if (this.gridManager.getTileData(gridX, gridY) !== null) {
-                 this.gridManager.setTileData(gridX, gridY, null);
-                 this.engine.errorHandler.warn(`Cleared untracked tile data from GridManager at (${gridX},${gridY}).`, { component: 'TileManager', method: 'removeTile', params: { gridX, gridY }});
-            }
-        }
+        const key = `${gridX}_${gridY}`;
+        return this.tiles.delete(key);
     }
 
     /**
-     * Clears all tiles from the map, resetting `gridData` in `GridManager` and clearing `tilesMap`.
+     * Gets the properties defined for a specific tile type.
+     * @param {string} typeName - The name of the tile type.
+     * @returns {object | undefined} The properties object for the tile type, or undefined if not found.
      */
-    clearAllTiles() {
-        for (let r = 0; r < this.gridManager.mapHeight; r++) {
-            for (let c = 0; c < this.gridManager.mapWidth; c++) {
-                const tile = this.getTileAt(c, r); // Assuming getTileAt retrieves the Tile instance
-                if (tile && typeof tile.destroy === 'function') {
-                    try {
-                        tile.destroy();
-                    } catch (e) {
-                        this.engine.errorHandler.error(`Error destroying tile at (${c},${r}): ${e.message}`, { context: 'TileManager.clearAllTiles.destroyTile', gridX: c, gridY: r, originalError: e });
-                    }
-                }
-                // Ensure GridManager is cleared regardless of tile.destroy success
-                this.gridManager.setTileData(c, r, null);
-            }
-        }
-        this.tilesMap.clear(); // Clear the TileManager's own map
-        this.engine.errorHandler.info("All tiles cleared from GridManager and internal map. Individual tile destroy methods called if present.", { component: 'TileManager', method: 'clearAllTiles'});
+    getTileTypeProperties(typeName) {
+        return this.tileTypes.get(typeName);
     }
 
-
     /**
-     * Adds all currently managed visible tiles to the `RenderingEngine`'s drawable list for rendering.
-     * This method should be called by the active scene's `render` method each frame.
-     * @param {import('../rendering/RenderingEngine.js').default} renderingEngine - The engine's rendering manager.
-     * @throws {Error} If `renderingEngine` is not provided.
+     * Renders all managed tiles.
+     * If a tile has a `spriteInstance` in its `data` property, that sprite is added to the `RenderingEngine`.
+     * Otherwise, if the tile type has a `color` property, a colored rectangle is drawn directly by the `RenderingEngine`.
+     * A placeholder may be drawn if a sprite was intended but failed to load.
+     * @param {import('../rendering/RenderingEngine.js').default} renderingEngine - The rendering engine instance to add drawables to or draw with.
      */
     renderTiles(renderingEngine) {
         if (!renderingEngine) {
-            this.engine.errorHandler.error("RenderingEngine instance is required for renderTiles.", { component: 'TileManager', method: 'renderTiles'});
+            this.engine.errorHandler.error("TileManager.renderTiles: RenderingEngine is required.", { component: 'TileManager', method: 'renderTiles' });
             return;
         }
-        for (const tile of this.tilesMap.values()) {
-            if (tile.visible) {
-                renderingEngine.add(tile); // Tile instances are themselves drawable
+
+        for (const tile of this.tiles.values()) {
+            if (!tile.visible) continue;
+
+            const typeProps = this.getTileTypeProperties(tile.type);
+            if (!tile.visible) continue;
+
+            if (tile.data.spriteInstance instanceof Sprite) {
+                renderingEngine.add(tile.data.spriteInstance);
+            } else {
+                const typeProps = this.getTileTypeProperties(tile.type);
+                if (typeProps && typeProps.color) {
+                    const worldPos = this.gridManager.gridToWorld(tile.gridX, tile.gridY);
+                    renderingEngine.drawRect(
+                        worldPos.worldX,
+                        worldPos.worldY,
+                        this.gridManager.tileWidth,
+                        this.gridManager.tileHeight,
+                        typeProps.color,
+                        true
+                    );
+                } else if (typeProps && (typeProps.atlasName || typeProps.frameName) && !tile.data.spriteInstance) {
+                    // Only draw placeholder if sprite was intended but failed to load/create
+                    const worldPos = this.gridManager.gridToWorld(tile.gridX, tile.gridY);
+                    renderingEngine.drawRect( worldPos.worldX, worldPos.worldY, this.gridManager.tileWidth, this.gridManager.tileHeight, '#FF00FF', true);
+                    this.engine.errorHandler.debug(`Drawing placeholder for tile type '${tile.type}' at (${tile.gridX},${tile.gridY}) as sprite instance was not created.`, {component: 'TileManager'});
+                }
             }
         }
     }
-}
 
-export default TileManager;
+    /**
+     * Clears all tile instances and defined tile types.
+     * Useful for resetting or changing levels.
+     */
+    clearAll() {
+        this.tiles.clear();
+        this.tileTypes.clear();
+        this.engine.errorHandler.info('TileManager: All tiles and tile types cleared.', { component: 'TileManager', method: 'clearAll' });
+    }
+}
