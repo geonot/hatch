@@ -11,7 +11,7 @@ import { EngineEvents, ErrorLevels, LogLevelPriority } from './Constants.js';
 import AssetManager from '../assets/AssetManager.js';
 import InputManager from '../input/InputManager.js';
 import RenderingEngine from '../rendering/RenderingEngine.js'; // Corrected path
-import SceneManager from './SceneManager.js';
+import SceneManager from '../scenes/SceneManager.js';
 import { Scene } from './Scene.js';
 import AudioManager from '../audio/AudioManager.js';
 

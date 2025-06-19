@@ -26,11 +26,22 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Install CLI globally
+      run: npm install -g ./
+
     - name: Run linters (placeholder)
       run: echo "Linting step placeholder - add your linting command here if configured"
 
     - name: Run tests
       run: npm test
+
+    - name: Scaffold New Project
+      run: hatch new MyTestProject
+
+    - name: Build Scaffolded Project
+      run: |
+        cd MyTestProject
+        hatch build
 
     # - name: Build project (placeholder)
     #   run: |

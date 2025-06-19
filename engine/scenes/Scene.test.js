@@ -2,6 +2,7 @@ import Scene from './Scene.js'; // Default export
 // Removed: import { expect } from 'chai';
 // No sinon needed if we use jest.fn() for all spies/stubs checked by expect
 // import sinon from 'sinon';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 describe('Scene', () => {
   let mockEngine;

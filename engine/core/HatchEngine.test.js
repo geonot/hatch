@@ -1,6 +1,6 @@
 // import { HatchEngine } from './HatchEngine.js'; // Original import
-// import { EventBus } from './EventBus.js';
-// import { ErrorHandler } from './ErrorHandler.js';
+import { EventBus } from './EventBus.js';
+import { ErrorHandler } from './ErrorHandler.js';
 // import AssetManager from '../assets/AssetManager.js';
 // import InputManager from '../input/InputManager.js';
 // import RenderingEngine from '../rendering/RenderingEngine.js';
@@ -9,10 +9,11 @@
 
 // import { expect } from 'chai';
 // import sinon from 'sinon';
+import { jest, describe, it, expect, beforeEach, afterEach,  } from '@jest/globals';
 
 // Mock external modules using Jest's mocking syntax
 // Hoist the problematic mock to the very top.
-jest.mock('./SceneManager.js', () => {
+jest.mock('../scenes/SceneManager.js', () => {
   return jest.fn().mockImplementation(() => {
     return {
       loadScene: jest.fn(),
@@ -23,21 +24,44 @@ jest.mock('./SceneManager.js', () => {
 });
 
 import { HatchEngine } from './HatchEngine.js';
-// import { EventBus } from './EventBus.js';
-// import { ErrorHandler } from './ErrorHandler.js';
-// import AssetManager from '../assets/AssetManager.js';
-// import InputManager from '../input/InputManager.js';
-// import RenderingEngine from '../rendering/RenderingEngine.js';
-import SceneManager from './SceneManager.js'; // Still need to import to reference the mock
+// import { EventBus } from './EventBus.js'; // EventBus is imported below for projectConfig
+// import { ErrorHandler } from './ErrorHandler.js'; // ErrorHandler is imported below for projectConfig
+import AssetManager from '../assets/AssetManager.js';
+import InputManager from '../input/InputManager.js';
+import RenderingEngine from '../rendering/RenderingEngine.js';
+import SceneManager from '../scenes/SceneManager.js'; // Still need to import to reference the mock
 // import Scene from './Scene.js';
 import { ErrorLevels } from './Constants.js'; // Import ErrorLevels
 
 // Mock core engine modules
-// jest.mock('./EventBus.js');
-// jest.mock('./ErrorHandler.js');
-// jest.mock('../assets/AssetManager.js');
-// jest.mock('../input/InputManager.js');
-// jest.mock('../rendering/RenderingEngine.js');
+jest.mock('./EventBus.js', () => ({
+  EventBus: jest.fn().mockImplementation(() => ({
+    emit: jest.fn(),
+    on: jest.fn(),
+    off: jest.fn(),
+  })),
+}));
+jest.mock('./ErrorHandler.js', () => ({
+  ErrorHandler: jest.fn().mockImplementation(() => ({
+    critical: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  })),
+}));
+jest.mock('../assets/AssetManager.js', () => jest.fn().mockImplementation(() => ({
+  loadManifest: jest.fn(),
+})));
+jest.mock('../input/InputManager.js', () => jest.fn().mockImplementation(() => ({
+  setup: jest.fn(),
+  destroy: jest.fn(),
+})));
+jest.mock('../rendering/RenderingEngine.js', () => jest.fn().mockImplementation(() => ({
+  clear: jest.fn(),
+  renderManagedDrawables: jest.fn(),
+  camera: { applyTransform: jest.fn() },
+})));
 // The SceneManager mock is now at the top.
 // jest.mock('./Scene.js');
 
@@ -63,11 +87,11 @@ describe('HatchEngine', () => {
       renderer: {},
       // For dependency injection in tests, we can override the classes
       // These will use the Jest mocks defined at the top of the file
-      // EventBusClass: EventBus, // Mocked classes will be used by default if not overridden
-      // ErrorHandlerClass: ErrorHandler,
-      // AssetManagerClass: AssetManager,
-      // InputManagerClass: InputManager,
-      // RenderingEngineClass: RenderingEngine,
+      EventBusClass: EventBus, // Mocked classes will be used by default if not overridden
+      ErrorHandlerClass: ErrorHandler,
+      AssetManagerClass: AssetManager,
+      InputManagerClass: InputManager,
+      RenderingEngineClass: RenderingEngine,
       SceneManagerClass: SceneManager, // Explicitly use the imported mock for SceneManager
       // SceneClass: Scene,
     };
@@ -137,16 +161,7 @@ describe('HatchEngine', () => {
     // For now, we'll rely on fetch providing valid YAML text and js-yaml parsing it.
 
     // Provide default mock implementations for constructors that might be new-ed up
-    EventBus.mockImplementation(() => ({ emit: jest.fn(), on: jest.fn(), off: jest.fn() }));
-    ErrorHandler.mockImplementation(() => ({ critical: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
-    AssetManager.mockImplementation(() => ({ loadManifest: jest.fn() }));
-    InputManager.mockImplementation(() => ({ setup: jest.fn(), destroy: jest.fn() }));
-    RenderingEngine.mockImplementation(() => ({ clear: jest.fn(), renderManagedDrawables: jest.fn(), camera: { applyTransform: jest.fn() } }));
-    // EventBus.mockImplementation(() => ({ emit: jest.fn(), on: jest.fn(), off: jest.fn() }));
-    // ErrorHandler.mockImplementation(() => ({ critical: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
-    // AssetManager.mockImplementation(() => ({ loadManifest: jest.fn() }));
-    // InputManager.mockImplementation(() => ({ setup: jest.fn(), destroy: jest.fn() }));
-    // RenderingEngine.mockImplementation(() => ({ clear: jest.fn(), renderManagedDrawables: jest.fn(), camera: { applyTransform: jest.fn() } }));
+    // EventBus, ErrorHandler, AssetManager, InputManager, RenderingEngine are now mocked globally with implementations.
     // SceneManager is mocked at the top.
     // Scene.mockImplementation(() => ({ load: jest.fn(), init: jest.fn(), update: jest.fn(), render: jest.fn(), destroy: jest.fn() }));
   });
@@ -176,14 +191,14 @@ describe('HatchEngine', () => {
     });
 
     // Commenting out other constructor tests for now to isolate the module resolution
-    // it('should create an instance of HatchEngine with given configuration', () => {
-    //   engine = new HatchEngine(projectConfig);
-    //   expect(engine).toBeInstanceOf(HatchEngine);
-    //   expect(engine.hatchConfig).toEqual(projectConfig);
-    //   expect(engine.canvasId).toBe('testCanvas');
-    //   expect(engine.width).toBe(800);
-    //   expect(engine.height).toBe(600);
-    // });
+    it('should create an instance of HatchEngine with given configuration', () => {
+      engine = new HatchEngine(projectConfig);
+      expect(engine).toBeInstanceOf(HatchEngine);
+      expect(engine.hatchConfig).toEqual(projectConfig);
+      expect(engine.canvasId).toBe('testCanvas');
+      expect(engine.width).toBe(800);
+      expect(engine.height).toBe(600);
+    });
 
     // it('should instantiate core managers with provided classes or defaults', () => {
     //   engine = new HatchEngine(projectConfig);
