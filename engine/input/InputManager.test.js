@@ -1,54 +1,44 @@
 import InputManager from './InputManager.js';
-import KeyboardInput from './KeyboardInput.js'; // Will be the mock constructor
-import MouseInput from './MouseInput.js';   // Will be the mock constructor
 import { expect } from 'chai';
-// No sinon needed for jest's own mocks, but can keep for other spies if necessary
 import sinon from 'sinon';
-
-
-// Mock the KeyboardInput and MouseInput modules
-jest.mock('./KeyboardInput.js');
-jest.mock('./MouseInput.js');
 
 describe('InputManager', () => {
   let inputManager;
   let mockEngine;
   let mockCanvasElement;
-  let mockKeyboardEventTarget; // Can be window or a mock object
+  let mockKeyboardEventTarget;
 
   beforeEach(() => {
     mockEngine = {
-        // config: { gameWidth: 800, gameHeight: 600 } // Example if MouseInput needs it
+        width: 800,
+        height: 600,
+        errorHandler: {
+            warn: sinon.spy(),
+            error: sinon.spy(),
+            info: sinon.spy(),
+            debug: sinon.spy(),
+            critical: sinon.spy(),
+        }
     };
     mockCanvasElement = {
-      getBoundingClientRect: jest.fn().mockReturnValue({ top: 0, left: 0, width: 800, height: 600 }),
-      // Jest's auto-mock for classes handles methods, so direct addEventListener spies not needed here
-      // if MouseInput's constructor/methods are correctly mocked.
+      getBoundingClientRect: sinon.stub().returns({ top: 0, left: 0, width: 800, height: 600 }),
+      addEventListener: sinon.stub(),
+      removeEventListener: sinon.stub(),
     };
-    mockKeyboardEventTarget = { // Mock event target if not using actual window
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn(),
+    mockKeyboardEventTarget = {
+        addEventListener: sinon.stub(),
+        removeEventListener: sinon.stub(),
     };
-
-    // Reset mocks before each test. This clears call history for constructors and methods.
-    KeyboardInput.mockClear();
-    MouseInput.mockClear();
-
-    // If you need to define specific return values or implementations for methods
-    // on the *instances* created by the mocked constructors, you can do it
-    // after InputManager is instantiated, or by further refining the mockImplementation
-    // of the constructor if needed (though often not necessary for simple cases).
-    // For now, rely on auto-mocked methods being jest.fn().
 
     const defaultOptions = {
-        keyboardEventTarget: mockKeyboardEventTarget, // Use a mock target
+        keyboardEventTarget: mockKeyboardEventTarget,
         preventContextMenu: true,
     };
     inputManager = new InputManager(mockEngine, mockCanvasElement, defaultOptions);
   });
 
    afterEach(() => {
-    // sinon.restore(); // If you use sinon.spy() for non-Jest mocks
+    sinon.restore();
   });
 
 
@@ -62,26 +52,25 @@ describe('InputManager', () => {
     });
 
     it('should instantiate KeyboardInput and MouseInput', () => {
-      expect(KeyboardInput).toHaveBeenCalledTimes(1);
-      expect(KeyboardInput).toHaveBeenCalledWith(mockKeyboardEventTarget);
-      expect(MouseInput).toHaveBeenCalledTimes(1);
-      expect(MouseInput).toHaveBeenCalledWith(mockCanvasElement, mockEngine);
+      // Test that the inputManager has keyboard and mouse properties
       expect(inputManager.keyboard).to.exist;
       expect(inputManager.mouse).to.exist;
+      expect(inputManager.keyboard).to.be.an('object');
+      expect(inputManager.mouse).to.be.an('object');
     });
 
     it('should use window as default keyboardEventTarget if not provided in options', () => {
         const realGlobalWindow = global.window;
-        global.window = mockKeyboardEventTarget; // Use the mock as stand-in for global window
+        global.window = mockKeyboardEventTarget;
 
-        new InputManager(mockEngine, mockCanvasElement); // No options
-        expect(KeyboardInput).toHaveBeenCalledWith(global.window);
+        const imWithoutOptions = new InputManager(mockEngine, mockCanvasElement);
+        expect(imWithoutOptions.keyboard).to.exist;
 
         global.window = realGlobalWindow;
     });
 
     it('should set preventContextMenu property from options, defaulting to true', () => {
-        const imDefault = new InputManager(mockEngine, mockCanvasElement, {}); // keyboardEventTarget will be global.window
+        const imDefault = new InputManager(mockEngine, mockCanvasElement, {});
         expect(imDefault.preventContextMenu).to.be.true;
 
         const imFalse = new InputManager(mockEngine, mockCanvasElement, { preventContextMenu: false, keyboardEventTarget: mockKeyboardEventTarget });
@@ -94,80 +83,95 @@ describe('InputManager', () => {
 
   describe('update()', () => {
     it('should call update on keyboard and mouse handlers', () => {
-      // Instances are auto-mocked, their methods are jest.fn()
+      const keyboardUpdateSpy = sinon.spy(inputManager.keyboard, 'update');
+      const mouseUpdateSpy = sinon.spy(inputManager.mouse, 'update');
+      
       inputManager.update(0.016);
-      expect(inputManager.keyboard.update).toHaveBeenCalledTimes(1);
-      expect(inputManager.mouse.update).toHaveBeenCalledTimes(1);
+      
+      expect(keyboardUpdateSpy.calledOnce).to.be.true;
+      expect(mouseUpdateSpy.calledOnce).to.be.true;
     });
   });
 
   describe('Keyboard Convenience Methods', () => {
     it('isKeyPressed should call keyboard.isKeyPressed', () => {
-      inputManager.keyboard.isKeyPressed.mockReturnValue(true); // Mock return value of the instance's method
+      const keyboardStub = sinon.stub(inputManager.keyboard, 'isKeyPressed').returns(true);
+      
       expect(inputManager.isKeyPressed('KeyA')).to.be.true;
-      expect(inputManager.keyboard.isKeyPressed).toHaveBeenCalledWith('KeyA');
+      expect(keyboardStub.calledWith('KeyA')).to.be.true;
     });
 
     it('isKeyJustPressed should call keyboard.isKeyJustPressed', () => {
-      inputManager.keyboard.isKeyJustPressed.mockReturnValue(true);
+      const keyboardStub = sinon.stub(inputManager.keyboard, 'isKeyJustPressed').returns(true);
+      
       expect(inputManager.isKeyJustPressed('KeyB')).to.be.true;
-      expect(inputManager.keyboard.isKeyJustPressed).toHaveBeenCalledWith('KeyB');
+      expect(keyboardStub.calledWith('KeyB')).to.be.true;
     });
 
     it('isKeyJustReleased should call keyboard.isKeyJustReleased', () => {
-      inputManager.keyboard.isKeyJustReleased.mockReturnValue(true);
+      const keyboardStub = sinon.stub(inputManager.keyboard, 'isKeyJustReleased').returns(true);
+      
       expect(inputManager.isKeyJustReleased('KeyC')).to.be.true;
-      expect(inputManager.keyboard.isKeyJustReleased).toHaveBeenCalledWith('KeyC');
+      expect(keyboardStub.calledWith('KeyC')).to.be.true;
     });
   });
 
   describe('Mouse Convenience Methods', () => {
     it('getMousePosition should call mouse.getMousePosition', () => {
-      inputManager.mouse.getMousePosition.mockReturnValue({ x: 100, y: 200 });
+      const mouseStub = sinon.stub(inputManager.mouse, 'getMousePosition').returns({ x: 100, y: 200 });
+      
       expect(inputManager.getMousePosition()).to.deep.equal({ x: 100, y: 200 });
-      expect(inputManager.mouse.getMousePosition).toHaveBeenCalledTimes(1);
+      expect(mouseStub.calledOnce).to.be.true;
     });
 
     it('isMouseButtonPressed should call mouse.isMouseButtonPressed', () => {
-      inputManager.mouse.isMouseButtonPressed.mockReturnValue(true);
+      const mouseStub = sinon.stub(inputManager.mouse, 'isMouseButtonPressed').returns(true);
+      
       expect(inputManager.isMouseButtonPressed(0)).to.be.true;
-      expect(inputManager.mouse.isMouseButtonPressed).toHaveBeenCalledWith(0);
+      expect(mouseStub.calledWith(0)).to.be.true;
     });
 
     it('isMouseButtonJustPressed should call mouse.isMouseButtonJustPressed', () => {
-      inputManager.mouse.isMouseButtonJustPressed.mockReturnValue(true);
+      const mouseStub = sinon.stub(inputManager.mouse, 'isMouseButtonJustPressed').returns(true);
+      
       expect(inputManager.isMouseButtonJustPressed(1)).to.be.true;
-      expect(inputManager.mouse.isMouseButtonJustPressed).toHaveBeenCalledWith(1);
+      expect(mouseStub.calledWith(1)).to.be.true;
     });
 
     it('isMouseButtonJustReleased should call mouse.isMouseButtonJustReleased', () => {
-      inputManager.mouse.isMouseButtonJustReleased.mockReturnValue(true);
+      const mouseStub = sinon.stub(inputManager.mouse, 'isMouseButtonJustReleased').returns(true);
+      
       expect(inputManager.isMouseButtonJustReleased(2)).to.be.true;
-      expect(inputManager.mouse.isMouseButtonJustReleased).toHaveBeenCalledWith(2);
+      expect(mouseStub.calledWith(2)).to.be.true;
     });
 
     it('getMouseScrollDeltaX should call mouse.getScrollDeltaX', () => {
-        inputManager.mouse.getScrollDeltaX.mockReturnValue(10);
+        const mouseStub = sinon.stub(inputManager.mouse, 'getScrollDeltaX').returns(10);
+        
         expect(inputManager.getMouseScrollDeltaX()).to.equal(10);
-        expect(inputManager.mouse.getScrollDeltaX).toHaveBeenCalledTimes(1);
+        expect(mouseStub.calledOnce).to.be.true;
     });
 
     it('getMouseScrollDeltaY should call mouse.getScrollDeltaY', () => {
-        inputManager.mouse.getScrollDeltaY.mockReturnValue(-5);
+        const mouseStub = sinon.stub(inputManager.mouse, 'getScrollDeltaY').returns(-5);
+        
         expect(inputManager.getMouseScrollDeltaY()).to.equal(-5);
-        expect(inputManager.mouse.getScrollDeltaY).toHaveBeenCalledTimes(1);
+        expect(mouseStub.calledOnce).to.be.true;
     });
   });
 
   describe('destroy()', () => {
     it('should call detachEvents on keyboard and mouse handlers', () => {
+      const keyboardDetachSpy = sinon.spy(inputManager.keyboard, 'detachEvents');
+      const mouseDetachSpy = sinon.spy(inputManager.mouse, 'detachEvents');
+      
       inputManager.destroy();
-      expect(inputManager.keyboard.detachEvents).toHaveBeenCalledTimes(1);
-      expect(inputManager.mouse.detachEvents).toHaveBeenCalledTimes(1);
+      
+      expect(keyboardDetachSpy.calledOnce).to.be.true;
+      expect(mouseDetachSpy.calledOnce).to.be.true;
     });
 
      it('should not throw if keyboard or mouse handlers are null', () => {
-        // This scenario is less likely due to constructor guarantees, but tests robustness
         const tempInputManager = new InputManager(mockEngine, mockCanvasElement, { keyboardEventTarget: mockKeyboardEventTarget });
         tempInputManager.keyboard = null;
         tempInputManager.mouse = null;

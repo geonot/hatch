@@ -1,0 +1,18 @@
+{
+  "preset": null,
+  "transform": {},
+  "testEnvironment": "node",
+  "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
+  "collectCoverageFrom": [
+    "engine/**/*.js",
+    "!engine/**/*.test.js",
+    "!**/node_modules/**"
+  ],
+  "testMatch": [
+    "**/*.test.js"
+  ],
+  "verbose": true
+}

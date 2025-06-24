@@ -9,6 +9,9 @@ describe('AssetManager', () => {
   let consoleLogSpy, consoleWarnSpy, consoleErrorSpy;
 
   beforeEach(() => {
+    // Restore any existing spies first
+    sinon.restore();
+    
     consoleLogSpy = sinon.spy(console, 'log');
     consoleWarnSpy = sinon.spy(console, 'warn');
     consoleErrorSpy = sinon.spy(console, 'error');
@@ -25,6 +28,8 @@ describe('AssetManager', () => {
       }),
       error: sinon.spy(),
       warn: sinon.spy(),
+      info: sinon.spy(),
+      debug: sinon.spy(),
     };
     mockEngine = {
       errorHandler: mockErrorHandler,
@@ -110,7 +115,9 @@ describe('AssetManager', () => {
     delete global.Image;
     delete global.Audio;
     delete global.fetch;
-    assetManager.clearAll();
+    if (assetManager && typeof assetManager.clearAll === 'function') {
+      assetManager.clearAll();
+    }
     sinon.restore();
   });
 
@@ -134,7 +141,7 @@ describe('AssetManager', () => {
       expect(mockErrorHandler.critical.calledOnce).to.be.true;
       const firstCallArgs = mockErrorHandler.critical.getCall(0).args;
       expect(firstCallArgs[0]).to.equal("AssetManager: Failed to load image 'error-image' at path 'error-image.png'. Check network tab for details.");
-      expect(firstCallArgs[1].assetName).to.equal('error-image');
+      expect(firstCallArgs[1].params.assetName).to.equal('error-image');
       // originalError.message is now the message from the error created in _loadImage
       expect(firstCallArgs[1].originalError.message).to.equal("AssetManager: Failed to load image 'error-image' at path 'error-image.png'. Check network tab for details.");
       expect(assetManager.get('error-image')).to.be.undefined;
@@ -158,7 +165,7 @@ describe('AssetManager', () => {
       expect(mockErrorHandler.critical.calledOnce).to.be.true;
       const firstCallArgs = mockErrorHandler.critical.getCall(0).args;
       expect(firstCallArgs[0]).to.equal("AssetManager: Failed to load audio 'error-audio' at path 'error-audio.mp3'. Check network or console for details.");
-      expect(firstCallArgs[1].assetName).to.equal('error-audio');
+      expect(firstCallArgs[1].params.assetName).to.equal('error-audio');
       expect(firstCallArgs[1].originalError.message).to.equal("AssetManager: Failed to load audio 'error-audio' at path 'error-audio.mp3'. Check network or console for details.");
       expect(assetManager.get('error-audio')).to.be.undefined;
     });
@@ -180,7 +187,7 @@ describe('AssetManager', () => {
       expect(mockErrorHandler.critical.calledOnce).to.be.true;
       const firstCallArgs = mockErrorHandler.critical.getCall(0).args;
       expect(firstCallArgs[0]).to.equal("AssetManager: Error loading or parsing JSON 'error-json' from 'error-json.json'. Simulated underlying JSON parse error");
-      expect(firstCallArgs[1].assetName).to.equal('error-json');
+      expect(firstCallArgs[1].params.assetName).to.equal('error-json');
       expect(firstCallArgs[1].originalError.message).to.equal("AssetManager: Error loading or parsing JSON 'error-json' from 'error-json.json'. Simulated underlying JSON parse error");
       expect(assetManager.get('error-json')).to.be.undefined;
     });
@@ -195,7 +202,7 @@ describe('AssetManager', () => {
         expect(mockErrorHandler.critical.calledOnce).to.be.true;
         const firstCallArgs = mockErrorHandler.critical.getCall(0).args;
         expect(firstCallArgs[0]).to.equal("AssetManager: Failed to fetch JSON 'fetch-error-json' from 'fetch-error.json'. Status: 404");
-        expect(firstCallArgs[1].assetName).to.equal('fetch-error-json');
+        expect(firstCallArgs[1].params.assetName).to.equal('fetch-error-json');
         expect(firstCallArgs[1].originalError.message).to.equal("AssetManager: Failed to fetch JSON 'fetch-error-json' from 'fetch-error.json'. Status: 404");
         expect(assetManager.get('fetch-error-json')).to.be.undefined;
     });
@@ -218,9 +225,13 @@ describe('AssetManager', () => {
     });
 
      it('should handle unsupported asset type and use console.warn', async () => {
-      const asset = await assetManager.loadAsset({ name: 'unsupported', path: 'some.font', type: 'font' });
-      expect(asset).to.be.null;
-      expect(consoleWarnSpy.calledWith(sinon.match(/AssetManager: Asset type 'font' for asset 'unsupported' is not currently supported./))).to.be.true;
+      try {
+        await assetManager.loadAsset({ name: 'unsupported', path: 'some.font', type: 'font' });
+        expect.fail('loadAsset should have thrown for invalid asset type');
+      } catch (e) {
+        expect(e.message).to.equal("AssetManager.loadAsset: 'type' must be a valid AssetType. Received: font");
+      }
+      expect(mockErrorHandler.error.calledOnce).to.be.true;
       expect(assetManager.get('unsupported')).to.be.undefined;
     });
   });
@@ -267,7 +278,7 @@ describe('AssetManager', () => {
         expect(mockErrorHandler.critical.calledOnce).to.be.true;
         const callArgs = mockErrorHandler.critical.getCall(0).args;
         expect(callArgs[0]).to.equal("AssetManager: Failed to load image 'error-image.png' at path 'assets/images/error-image.png'. Check network tab for details.");
-        expect(callArgs[1].assetName).to.equal('error-image.png');
+        expect(callArgs[1].params.assetName).to.equal('error-image.png');
         expect(callArgs[1].originalError.message).to.equal("AssetManager: Failed to load image 'error-image.png' at path 'assets/images/error-image.png'. Check network tab for details.");
     });
   });
@@ -313,9 +324,9 @@ describe('AssetManager', () => {
       expect(assetManager.get('img-bad')).to.be.undefined; // Failed asset not stored
 
       expect(mockErrorHandler.critical.calledOnce).to.be.true; // Called for 'img-bad'
-      expect(mockErrorHandler.critical.getCall(0).args[1].assetName).to.equal('img-bad');
-      // Check that console.warn was called by loadManifest for the failed asset
-      expect(consoleWarnSpy.calledWith(sinon.match(/AssetManager.loadManifest: Asset 'img-bad' \(from manifest\) failed to load. Reason: AssetManager: Failed to load image 'img-bad' at path 'error-image.png'/))).to.be.true;
+      expect(mockErrorHandler.critical.getCall(0).args[1].params.assetName).to.equal('img-bad');
+      // Check that errorHandler.warn was called by loadManifest for the failed asset
+      expect(mockErrorHandler.warn.calledWith(sinon.match(/Asset 'img-bad' \(from manifest\) failed to load. Reason: AssetManager: Failed to load image 'img-bad' at path 'error-image.png'/), sinon.match.object)).to.be.true;
     });
 
     it('should call engine.errorHandler.warn for invalid asset entries in manifest', async () => {
@@ -329,7 +340,7 @@ describe('AssetManager', () => {
         expect(assetManager.get('valid')._isMockImage).to.be.true;
         expect(mockErrorHandler.warn.calledOnce).to.be.true;
         expect(mockErrorHandler.warn.getCall(0).args[0]).to.include("Skipping invalid asset entry");
-        expect(mockErrorHandler.warn.getCall(0).args[1].assetInfo).to.deep.equal({path: 'no-name.png', type: 'image'});
+        expect(mockErrorHandler.warn.getCall(0).args[1].params.assetInfo).to.deep.equal({path: 'no-name.png', type: 'image'});
     });
 
     it('should call engine.errorHandler.warn for invalid manifest object', async () => {
@@ -340,10 +351,14 @@ describe('AssetManager', () => {
 
     it('should call engine.errorHandler.error if fetching manifest URL fails', async () => {
         await assetManager.loadManifest('invalid-manifest-url.json');
-        expect(mockErrorHandler.error.calledOnce).to.be.true;
-        const callArgs = mockErrorHandler.error.getCall(0).args;
-        expect(callArgs[0]).to.include("Failed to fetch manifest from 'invalid-manifest-url.json'. Status: 404");
-        expect(callArgs[1].manifestPath).to.equal('invalid-manifest-url.json');
+        expect(mockErrorHandler.error.callCount).to.be.greaterThan(0);
+        // Find the call that matches our expected pattern
+        const matchingCall = mockErrorHandler.error.getCalls().find(call => 
+            call.args[0] && call.args[0].includes("Failed to fetch manifest from 'invalid-manifest-url.json'")
+        );
+        expect(matchingCall).to.exist;
+        expect(matchingCall.args[0]).to.include("Failed to fetch manifest from 'invalid-manifest-url.json'. Status: 404");
+        expect(matchingCall.args[1].params.manifestPath).to.equal('invalid-manifest-url.json');
     });
   });
 

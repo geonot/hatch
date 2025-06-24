@@ -224,11 +224,10 @@ class AssetManager {
             this.engine.errorHandler.info(`Asset '${name}' (type: ${type}) loaded successfully.`, { component: 'AssetManager', method: 'loadAsset', params: assetInfo});
             return asset;
         } catch (error) {
-            const errorMessage = `Failed to load asset '${name}' (type: ${type}, path: ${path || assetInfo.jsonPath || 'N/A'}). Reason: ${error.message}`;
-            this.engine.errorHandler.error(errorMessage, {
+            this.engine.errorHandler.critical(error.message, {
                 component: 'AssetManager',
                 method: 'loadAsset',
-                params: { name, path: path || assetInfo.jsonPath, type }, // Use assetInfo for path context if general path is not available
+                params: { assetName: name, path: path || assetInfo.jsonPath, type },
                 originalError: error
             });
             throw error; // Re-throw the error to reject the promise
@@ -295,11 +294,11 @@ class AssetManager {
             this.engine.errorHandler.info(`Fetching manifest from URL: ${url}`, { component: 'AssetManager', method: '_fetchManifestFromUrl', params: { url }});
             const response = await fetch(url);
             if (!response.ok) {
-                const errorMsg = `Failed to fetch manifest. Status: ${response.status}`;
+                const errorMsg = `Failed to fetch manifest from '${url}'. Status: ${response.status}`;
                 this.engine.errorHandler.error(errorMsg, {
                     component: 'AssetManager',
                     method: '_fetchManifestFromUrl',
-                    params: { url, status: response.status }
+                    params: { manifestPath: url, status: response.status }
                 });
                 return null; // Indicate failure
             }
@@ -386,7 +385,7 @@ class AssetManager {
                 this.engine.errorHandler.error('Failed to process manifest due to fetch/parse error.', {
                      component: 'AssetManager',
                      method: 'loadManifest',
-                     params: { manifestSource: manifestUrl }
+                     params: { manifestPath: manifestUrl }
                 });
             }
         } else if (typeof manifestOrUrl === 'object' && manifestOrUrl !== null) {

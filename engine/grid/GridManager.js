@@ -139,3 +139,5 @@ export class GridManager {
         return gridX >= 0 && gridX < this.numCols && gridY >= 0 && gridY < this.numRows;
     }
 }
+
+export default GridManager;
