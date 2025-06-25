@@ -3,6 +3,7 @@
  * @description Handles mouse input events for a specified HTML element (typically the game canvas).
  * It tracks mouse position (scaled to logical canvas coordinates), button states (pressed,
  * just pressed, just released), and mouse wheel scroll deltas.
+ */
 import { InputEvents } from '../core/Constants.js'; // Import new events
 
 /**
@@ -114,17 +115,15 @@ class MouseInput {
      */
     _onMouseMove(event) {
         const rect = this.targetElement.getBoundingClientRect();
+        
+        // Calculate mouse position relative to canvas element
+        const clientX = event.clientX - rect.left;
+        const clientY = event.clientY - rect.top;
 
-        // Logical dimensions from engine instance directly
-        const canvasLogicalWidth = this.engine.width;
-        const canvasLogicalHeight = this.engine.height;
-
-        // rect.width and rect.height are the CSS display size of the canvas element.
-        const scaleX = rect.width > 0 ? canvasLogicalWidth / rect.width : 1;
-        const scaleY = rect.height > 0 ? canvasLogicalHeight / rect.height : 1;
-
-        this.x = (event.clientX - rect.left) * scaleX;
-        this.y = (event.clientY - rect.top) * scaleY;
+        // Always scale to logical coordinates based on actual display size
+        // This adapts to whatever size the browser decides to display the canvas
+        this.x = (clientX / rect.width) * this.engine.width;
+        this.y = (clientY / rect.height) * this.engine.height;
 
         // Emit grid mouse move event
         this._emitGridMouseEvent(InputEvents.GRID_MOUSEMOVE, event);

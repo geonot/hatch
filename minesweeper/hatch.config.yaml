@@ -1,0 +1,17 @@
+projectName: "Minesweeper"
+canvasId: gameCanvas
+gameWidth: 800
+gameHeight: 600
+initialScene: MinesweeperScene
+assetManifest: assets/asset-manifest.json
+logging:
+  level: info
+debug:
+  showStats: false
+instructions:
+  - "Left click: Reveal cell"
+  - "Right click: Flag/unflag cell" 
+  - "R: Restart game"
+  - "1/2/3: Change difficulty"
+  - "H: Show/hide instructions"
+instructionsKey: "KeyH"

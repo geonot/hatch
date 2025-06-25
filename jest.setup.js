@@ -5,6 +5,15 @@ global.HTMLCanvasElement = class MockCanvas {
   constructor() {
     this.width = 800;
     this.height = 600;
+    // Mock the style property that HatchEngine tries to modify
+    this.style = {
+      width: '',
+      height: '',
+      minWidth: '',
+      minHeight: '',
+      maxWidth: '',
+      maxHeight: ''
+    };
   }
   
   getContext() {
@@ -33,6 +42,24 @@ global.HTMLCanvasElement = class MockCanvas {
       stroke: () => {}
     };
   }
+  
+  // Add getBoundingClientRect method for MouseInput
+  getBoundingClientRect() {
+    return {
+      top: 0,
+      left: 0,
+      right: this.width,
+      bottom: this.height,
+      width: this.width,
+      height: this.height,
+      x: 0,
+      y: 0
+    };
+  }
+  
+  // Add event listener methods for input handling
+  addEventListener() {}
+  removeEventListener() {}
 };
 
 global.Image = class MockImage {
@@ -69,6 +96,38 @@ global.fetch = () => Promise.resolve({
   json: () => Promise.resolve({}),
   text: () => Promise.resolve('')
 });
+
+// Mock window object for browser-based code
+global.window = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  requestAnimationFrame: (callback) => setTimeout(callback, 16),
+  cancelAnimationFrame: (id) => clearTimeout(id),
+  devicePixelRatio: 1,
+  innerWidth: 800,
+  innerHeight: 600,
+  location: {
+    href: 'http://localhost',
+    origin: 'http://localhost'
+  },
+  document: global.document || {
+    createElement: (tagName) => {
+      if (tagName === 'canvas') {
+        return new global.HTMLCanvasElement();
+      }
+      return {};
+    },
+    getElementById: (id) => new global.HTMLCanvasElement()
+  }
+};
+
+// Mock navigator for user agent detection
+global.navigator = {
+  userAgent: 'Node.js Jest Test Environment'
+};
+
+// Also set global document
+global.document = global.window.document;
 
 // Suppress console warnings for cleaner test output
 const originalWarn = console.warn;

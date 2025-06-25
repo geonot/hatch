@@ -1,8 +1,0 @@
-{
-    "assets": [
-        { "name": "grass", "path": "/assets/images/grass.png", "type": "image" },
-        { "name": "wall", "path": "/assets/images/wall.png", "type": "image" },
-        { "name": "playerSprite", "path": "/assets/images/test-sprite.png", "type": "image" },
-        { "name": "testJsonData", "path": "/assets/test-data.json", "type": "json" }
-    ]
-}

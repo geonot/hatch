@@ -27,6 +27,8 @@ export class GridManager {
      * @param {number} config.numRows - Number of rows.
      * @param {number} config.tileWidth - Width of each tile in pixels.
      * @param {number} config.tileHeight - Height of each tile in pixels.
+     * @param {number} [config.offsetX=0] - X offset for grid positioning.
+     * @param {number} [config.offsetY=0] - Y offset for grid positioning.
      * @param {boolean} [config.showGridLines=true] - Whether to show debug grid lines.
      * @param {string} [config.gridLineColor='rgba(255,255,255,0.3)'] - Color of debug grid lines.
      */
@@ -46,11 +48,13 @@ export class GridManager {
         this.numRows = config.numRows;
         this.tileWidth = config.tileWidth;
         this.tileHeight = config.tileHeight;
+        this.offsetX = config.offsetX || 0;
+        this.offsetY = config.offsetY || 0;
         this.showGridLines = config.showGridLines === undefined ? true : config.showGridLines;
         this.gridLineColor = config.gridLineColor || 'rgba(255,255,255,0.3)';
 
         this.engine.errorHandler.info(
-            `GridManager initialized: ${this.numCols}x${this.numRows} grid, ${this.tileWidth}x${this.tileHeight} tiles.`,
+            `GridManager initialized: ${this.numCols}x${this.numRows} grid, ${this.tileWidth}x${this.tileHeight} tiles, offset: (${this.offsetX}, ${this.offsetY}).`,
             { component: 'GridManager' }
         );
     }
@@ -65,6 +69,18 @@ export class GridManager {
      *                                                  (after considering camera).
      */
     screenToGrid(screenX, screenY) {
+        // If we have offsets, use them directly (for grid scenes)
+        if (this.offsetX !== undefined && this.offsetY !== undefined) {
+            const gridX = Math.floor((screenX - this.offsetX) / this.tileWidth);
+            const gridY = Math.floor((screenY - this.offsetY) / this.tileHeight);
+            
+            if (gridX >= 0 && gridX < this.numCols && gridY >= 0 && gridY < this.numRows) {
+                return { gridX, gridY };
+            }
+            return null;
+        }
+        
+        // Fallback to camera-based conversion (for world-space grids)
         const worldPos = this.engine.renderingEngine.camera.screenToWorld(screenX, screenY);
 
         const gridX = Math.floor(worldPos.x / this.tileWidth);

@@ -7,6 +7,7 @@
 import jsyaml from 'js-yaml';
 import { EventBus } from './EventBus.js';
 import { ErrorHandler } from './ErrorHandler.js';
+import { configureLogger, getLogger, log } from './Logger.js';
 import { EngineEvents, ErrorLevels, LogLevelPriority } from './Constants.js';
 import AssetManager from '../assets/AssetManager.js';
 import InputManager from '../input/InputManager.js';
@@ -14,6 +15,7 @@ import RenderingEngine from '../rendering/RenderingEngine.js'; // Corrected path
 import SceneManager from '../scenes/SceneManager.js';
 import Scene from '../scenes/Scene.js';
 import AudioManager from '../audio/AudioManager.js';
+import UIManager from '../ui/UIManager.js';
 
 /**
  * @class HatchEngine
@@ -61,6 +63,8 @@ export class HatchEngine {
             assetManifest: undefined,
             logging: { level: ErrorLevels.INFO }, // Default logging config
             renderer: {},
+            instructions: [],
+            instructionsKey: 'KeyH',
         };
 
         // Apply defaults for missing keys (simple top-level merge)
@@ -78,13 +82,13 @@ export class HatchEngine {
         // gameWidth and gameHeight validation
         config.gameWidth = Number(config.gameWidth);
         if (isNaN(config.gameWidth) || config.gameWidth <= 0) {
-            console.warn(`Invalid gameWidth: ${config.gameWidth}. Falling back to default: ${defaults.gameWidth}`);
+            log.warn(`Invalid gameWidth: ${config.gameWidth}. Falling back to default: ${defaults.gameWidth}`);
             config.gameWidth = defaults.gameWidth;
         }
 
         config.gameHeight = Number(config.gameHeight);
         if (isNaN(config.gameHeight) || config.gameHeight <= 0) {
-            console.warn(`Invalid gameHeight: ${config.gameHeight}. Falling back to default: ${defaults.gameHeight}`);
+            log.warn(`Invalid gameHeight: ${config.gameHeight}. Falling back to default: ${defaults.gameHeight}`);
             config.gameHeight = defaults.gameHeight;
         }
 
@@ -92,7 +96,7 @@ export class HatchEngine {
         // If falsy (but not undefined), it might be an error or explicit null, handle as per requirements.
         // For now, if it's not undefined and not a string, log a warning.
         if (config.assetManifest !== undefined && typeof config.assetManifest !== 'string') {
-            console.warn(`[HatchEngine._applyDefaultConfigValues] assetManifest should be a string path or undefined. Received: ${config.assetManifest}. Attempting to treat as undefined.`);
+            log.warn(`[HatchEngine._applyDefaultConfigValues] assetManifest should be a string path or undefined. Received: ${config.assetManifest}. Attempting to treat as undefined.`);
             config.assetManifest = undefined;
         }
 
@@ -100,7 +104,7 @@ export class HatchEngine {
         config.logging = config.logging || {};
         if (!config.logging.level || !LogLevelPriority.hasOwnProperty(config.logging.level)) {
             if (config.logging.level) { // only warn if a level was provided but was invalid
-                console.warn(`[HatchEngine._applyDefaultConfigValues] Invalid logging level: ${config.logging.level}. Defaulting to ${defaults.logging.level}.`);
+                log.warn(`Invalid logging level: ${config.logging.level}. Defaulting to ${defaults.logging.level}.`);
             }
             config.logging.level = defaults.logging.level;
         }
@@ -135,7 +139,7 @@ export class HatchEngine {
                     throw new Error('Parsed YAML is not an object.');
                 }
             } catch (yamlError) {
-                console.error('[HATCH|ERROR][Static:HatchEngine.loadProjectConfig] Error parsing YAML content.', { path: configPath, library: 'js-yaml', error: yamlError.message, details: yamlError.stack });
+                log.error('Error parsing YAML content', { path: configPath, library: 'js-yaml', error: yamlError.message, details: yamlError.stack });
                 // Trigger ErrorHandler or rethrow if critical
                 // For now, we'll let it be caught by the outer catch block to return fallback defaults.
                 throw yamlError; // Re-throw to be caught by the main try-catch
@@ -143,14 +147,14 @@ export class HatchEngine {
 
             config = this._applyDefaultConfigValues(config);
 
-            console.log('HatchEngine.loadProjectConfig: Loaded and parsed project config using js-yaml from', configPath, config);
+            log.info('Loaded and parsed project config', { configPath, projectName: config.projectName });
             return config;
         } catch (e) {
             // This catches fetch errors, js-yaml parsing errors (if re-thrown), or other errors
             // NOTE: This is a static method, so it cannot access `this.errorHandler` directly.
             // A proper refactor might involve making ErrorHandler accessible statically or passing an instance.
-            // For now, console.error is used as per existing structure.
-            console.error('[HATCH|CRITICAL][Static:HatchEngine.loadProjectConfig] Failed to load or parse configuration file.', { path: configPath, error: e.message, details: e.stack }, 'Using fallback default configuration.');
+            // For now, use the logger available in this scope.
+            log.critical('Failed to load or parse configuration file. Using fallback default configuration.', { path: configPath, error: e.message, details: e.stack });
             // If ErrorHandler were available:
             // errorHandler.critical(`Failed to load project config from ${configPath}`, {
             //     component: 'HatchEngine',
@@ -182,12 +186,25 @@ export class HatchEngine {
         /** @type {object} */
         this.hatchConfig = projectConfig;
 
+        // Configure global logger early based on config
+        if (this.hatchConfig.logging) {
+            configureLogger(this.hatchConfig.logging);
+        }
+        
+        // Get logger instance for this engine
+        this.logger = getLogger('Engine');
+
         // Basic check for essential config properties before ErrorHandler is initialized
         if (typeof this.hatchConfig.canvasId !== 'string' ||
             typeof this.hatchConfig.gameWidth !== 'number' ||
             typeof this.hatchConfig.gameHeight !== 'number') {
             throw new Error("HatchEngine constructor: projectConfig is missing essential properties (canvasId, gameWidth, gameHeight) or they are of the wrong type.");
         }
+
+        this.logger.info('Initializing HatchEngine', { 
+            canvasId: this.hatchConfig.canvasId,
+            dimensions: `${this.hatchConfig.gameWidth}x${this.hatchConfig.gameHeight}` 
+        });
 
         /** @type {string} */
         this.canvasId = this.hatchConfig.canvasId;
@@ -211,12 +228,26 @@ export class HatchEngine {
         /** @type {Function} */
         this.AudioManagerClass = this.hatchConfig.AudioManagerClass || AudioManager;
         /** @type {Function} */
+        this.UIManagerClass = this.hatchConfig.UIManagerClass || UIManager;
+        /** @type {Function} */
         this.SceneClass = this.hatchConfig.SceneClass || Scene;
 
         /** @type {EventBus} */
         this.eventBus = new EventBusClass();
 
-        const initialLogLevel = this.hatchConfig.logging?.level || ErrorLevels.INFO;
+        // Normalize log level case to handle uppercase/mixed case inputs
+        let initialLogLevel = this.hatchConfig.logging?.level || ErrorLevels.INFO;
+        if (initialLogLevel && typeof initialLogLevel === 'string') {
+            const normalizedLevel = initialLogLevel.toLowerCase();
+            if (LogLevelPriority.hasOwnProperty(normalizedLevel)) {
+                if (normalizedLevel !== initialLogLevel) {
+                    // Update the config to use the normalized value
+                    this.hatchConfig.logging.level = normalizedLevel;
+                    initialLogLevel = normalizedLevel;
+                }
+            }
+        }
+        
         /** @type {ErrorHandler} */
         this.errorHandler = new ErrorHandlerClass(this.eventBus, initialLogLevel);
 
@@ -262,8 +293,28 @@ export class HatchEngine {
                 );
             }
 
+            // Force canvas to use exact logical dimensions regardless of device pixel ratio
+            // This prevents coordinate mapping issues in browsers like VS Code Simple Browser
             this.canvas.width = this.width;
             this.canvas.height = this.height;
+            
+            // Remove any CSS sizing constraints - let browser decide display size
+            this.canvas.style.width = '';
+            this.canvas.style.height = '';
+            this.canvas.style.minWidth = '';
+            this.canvas.style.minHeight = '';
+            this.canvas.style.maxWidth = '';
+            this.canvas.style.maxHeight = '';
+
+            // Debug logging for canvas setup
+            const rect = this.canvas.getBoundingClientRect();
+            this.logger.debug('Canvas Initialization Debug:', {
+                'Logical Size': `${this.width}x${this.height}`,
+                'Backing Store': `${this.canvas.width}x${this.canvas.height}`,
+                'Display Size': `${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`,
+                'Device Pixel Ratio': window.devicePixelRatio || 'undefined',
+                'User Agent': navigator.userAgent.includes('Code') ? 'VS Code Browser' : 'Other Browser'
+            });
 
             this.ctx = this.canvas.getContext('2d');
             if (!this.ctx) {
@@ -273,6 +324,10 @@ export class HatchEngine {
                 );
             }
 
+            // Make base Scene class available on the engine before instantiating SceneManager
+            /** @type {typeof Scene} */
+            this.Scene = this.SceneClass || Scene;
+
             // Instantiate core managers
             this.assetManager = new this.AssetManagerClass(this);
             this.inputManager = new this.InputManagerClass(this, this.canvas);
@@ -281,10 +336,7 @@ export class HatchEngine {
             this.renderingEngine = new this.RenderingEngineClass(this.canvas, this, rendererOptions);
             this.sceneManager = new this.SceneManagerClass(this);
             this.audioManager = new this.AudioManagerClass(this);
-
-            // Make base Scene class available on the engine
-            /** @type {typeof Scene} */
-            this.Scene = this.SceneClass;
+            this.uiManager = new this.UIManagerClass(this);
 
             this.errorHandler.info('Core managers instantiated.', { component: 'HatchEngine', method: 'init' });
 
@@ -301,7 +353,8 @@ export class HatchEngine {
                 });
             } else {
                 // Fallback if errorHandler itself is not available or failed
-                console.error(errorMessage, error);
+                // Use the logger instance if available, otherwise fall back to console
+                this.logger ? this.logger.error(errorMessage, error) : console.error(errorMessage, error);
                 throw error; // Re-throw if errorHandler is not available
             }
         }
@@ -389,6 +442,16 @@ export class HatchEngine {
                 this.errorHandler.warn('SceneManager is not available for updates in game loop.', { component: 'HatchEngine', method: '_loop', detail: 'this.sceneManager is null or has no update method.' });
             }
 
+            // Update UI manager BEFORE input manager clears "just pressed" states
+            if (this.uiManager && typeof this.uiManager.update === 'function') {
+                this.uiManager.update(deltaTime);
+            }
+
+            // Update input managers to clear "just pressed/released" states AFTER scene and UI have read them
+            if (this.inputManager && typeof this.inputManager.update === 'function') {
+                this.inputManager.update(deltaTime);
+            }
+
             // Rendering
             if (this.renderingEngine) {
                 // 1. Clear canvas (responsibility of RenderingEngine)
@@ -418,6 +481,11 @@ export class HatchEngine {
                                   (this.renderingEngine.showDebugInfo); // Assuming RE might have its own flag
                 if (showDebug) {
                     this.renderingEngine.drawDebugInfo();
+                }
+
+                // 7. Render UI overlay (instructions modal, etc.)
+                if (this.uiManager && typeof this.uiManager.render === 'function') {
+                    this.uiManager.render(this.renderingEngine.context);
                 }
 
             } else if (!this.renderingEngine) {

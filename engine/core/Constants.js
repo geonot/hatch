@@ -42,15 +42,18 @@ export const EngineEvents = {
 // for basic key/mouse events is not standard in this engine version. Components typically query state.
 // However, for new grid-specific events, direct emission is requested.
 export const InputEvents = {
-    // Placeholder for potential future basic input events
-    // KEY_DOWN: 'input:keydown',
-    // KEY_UP: 'input:keyup',
-    // MOUSE_DOWN: 'input:mousedown',
-    // MOUSE_UP: 'input:mouseup',
-    // MOUSE_MOVE: 'input:mousemove',
+    // Basic input events
+    KEY_DOWN: 'input:keydown',
+    KEY_UP: 'input:keyup',
+    MOUSE_DOWN: 'input:mousedown',
+    MOUSE_UP: 'input:mouseup',
+    MOUSE_MOVE: 'input:mousemove',
+    // Grid-specific events
     GRID_MOUSEDOWN: 'input:grid:mousedown',
     GRID_MOUSEUP: 'input:grid:mouseup',
     GRID_MOUSEMOVE: 'input:grid:mousemove',
+    GRID_MOUSEENTER: 'input:grid:mouseenter',
+    GRID_MOUSELEAVE: 'input:grid:mouseleave',
 };
 
 /**
