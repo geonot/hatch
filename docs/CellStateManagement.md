@@ -51,24 +51,30 @@ Configurable rendering system that maps states to visual representations.
 const renderer = new CellRenderer(engine);
 
 // Define visuals
-renderer.defineStateVisual('hidden', {
+renderer.defineStateVisual('hidden', { // Direct definition in CellRenderer
     type: 'color',
     fill: '#c0c0c0',
     stroke: '#808080'
 });
 
-renderer.defineStateVisual('mine', {
-    type: 'custom',
-    customRender: (ctx, col, row, x, y, size, cellState) => {
-        // Custom mine drawing logic
-    }
+// Register a custom function
+renderer.registerCustomRenderer('myMineRenderer', (ctx, col, row, x, y, size, cellState, visualData, engine) => {
+    // Custom mine drawing logic using cellState and visualData
+    ctx.fillStyle = visualData.mineColor || 'black';
+    // ... draw mine ...
 });
+
+// Then, a state's visual config would reference it by key:
+// (This part is usually in StateConfiguration)
+// visuals: {
+//   mineState: { type: 'custom', renderKey: 'myMineRenderer', mineColor: '#333' }
+// }
 ```
 
 ### 3. StateConfiguration
 **Location**: `engine/grid/StateConfiguration.js`
 
-Declarative configuration system for states, visuals, and transitions.
+Declarative configuration system for states, visuals (as data), and transitions.
 
 **Features**:
 - **Declarative Setup**: Define everything in configuration objects
@@ -199,8 +205,13 @@ const minesweeperConfig = {
     },
     visuals: {
         hidden: { type: 'color', fill: '#c0c0c0' },
-        revealed: { type: 'color', fill: '#ffffff' },
-        flagged: { type: 'custom', customRender: drawFlag }
+        revealed: { type: 'color', fill: '#ffffff' }, // Basic revealed, content would be in data
+        flagged: {
+            type: 'custom',
+            renderKey: 'myFlagRenderer', // Assumes 'myFlagRenderer' is registered in CellRenderer
+            flagColor: 'red',
+            poleColor: 'black'
+        }
     }
 };
 ```

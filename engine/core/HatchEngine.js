@@ -65,6 +65,8 @@ export class HatchEngine {
             renderer: {},
             instructions: [],
             instructionsKey: 'KeyH',
+            difficultyLevels: {}, // Default empty object for difficulty levels
+            defaultDifficulty: '', // Default empty string for default difficulty
         };
 
         // Apply defaults for missing keys (simple top-level merge)
@@ -111,6 +113,22 @@ export class HatchEngine {
 
         // Ensure renderer options exist
         config.renderer = config.renderer || defaults.renderer;
+
+        // Validate difficultyLevels (should be an object)
+        if (typeof config.difficultyLevels !== 'object' || config.difficultyLevels === null) {
+            log.warn(`Invalid difficultyLevels configuration. Expected object, got ${typeof config.difficultyLevels}. Falling back to default.`);
+            config.difficultyLevels = defaults.difficultyLevels;
+        }
+
+        // Validate defaultDifficulty (should be a string and exist as a key in difficultyLevels)
+        if (typeof config.defaultDifficulty !== 'string') {
+            log.warn(`Invalid defaultDifficulty configuration. Expected string, got ${typeof config.defaultDifficulty}. Falling back to default.`);
+            config.defaultDifficulty = defaults.defaultDifficulty;
+        } else if (config.defaultDifficulty && !config.difficultyLevels.hasOwnProperty(config.defaultDifficulty)) {
+            log.warn(`defaultDifficulty '${config.defaultDifficulty}' not found in difficultyLevels. Game might not start with intended difficulty.`);
+            // Optionally, could fall back to the first key in difficultyLevels or an empty string
+        }
+
 
         return config;
     }

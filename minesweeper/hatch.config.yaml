@@ -15,3 +15,22 @@ instructions:
   - "1/2/3: Change difficulty"
   - "H: Show/hide instructions"
 instructionsKey: "KeyH"
+
+difficultyLevels:
+  BEGINNER:
+    cols: 9
+    rows: 9
+    mines: 10
+    name: "BEGINNER" # Keep name for consistency if scene logic uses it
+  INTERMEDIATE:
+    cols: 16
+    rows: 16
+    mines: 40
+    name: "INTERMEDIATE"
+  EXPERT:
+    cols: 30
+    rows: 16
+    mines: 99
+    name: "EXPERT"
+
+defaultDifficulty: "BEGINNER"

@@ -23,59 +23,76 @@ export class CellRenderer {
     constructor(engine, config = {}) {
         this.engine = engine;
         this.logger = getLogger('CellRenderer');
-        
+
         this.config = {
-            defaultStyle: {
+            defaultStyle: { // This becomes the true default if a state has no visual defined
+                type: 'color',
                 fill: '#e0e0e0',
                 stroke: '#999999',
-                strokeWidth: 1
+                strokeWidth: 1,
+                zIndex: 0,
             },
             enableAnimations: false,
             animationDuration: 300,
             ...config
         };
-        
-        // State visual definitions
+
+        // State visual definitions, keyed by stateName
         this.stateVisuals = new Map();
-        
+        // Custom rendering functions, keyed by visual.renderKey
+        this.customRenderFunctions = new Map();
         // Animation state tracking
         this.animatingCells = new Map();
-        
         // Cache for frequently used visuals
         this.visualCache = new Map();
-        
+
         this.logger.info('CellRenderer initialized');
     }
 
     /**
-     * Define visual representation for a state
-     * @param {string} stateName - Name of the state
-     * @param {Object} visual - Visual definition
-     * @param {string} [visual.type='color'] - Rendering type: 'color', 'sprite', 'custom'
-     * @param {string} [visual.fill] - Fill color (for color type)
-     * @param {string} [visual.stroke] - Stroke color (for color type)
-     * @param {number} [visual.strokeWidth] - Stroke width (for color type)
-     * @param {string} [visual.sprite] - Sprite asset name (for sprite type)
-     * @param {string} [visual.frame] - Sprite frame name (for sprite type)
-     * @param {Function} [visual.customRender] - Custom render function (for custom type)
-     * @param {Object} [visual.animation] - Animation properties
-     * @param {number} [visual.zIndex=0] - Rendering order
+     * Registers a custom rendering function.
+     * @param {string} renderKey - The key used in StateConfiguration's visual definition (visual.renderKey).
+     * @param {Function} renderFunction - The function to execute for rendering this visual.
+     *                                    Expected signature: (ctx, col, row, x, y, size, cellState, visualData, engine)
      */
-    defineStateVisual(stateName, visual) {
+    registerCustomRenderer(renderKey, renderFunction) {
+        if (typeof renderFunction !== 'function') {
+            this.logger.error(`Attempted to register non-function for custom renderKey: ${renderKey}`);
+            return;
+        }
+        this.customRenderFunctions.set(renderKey, renderFunction);
+        this.logger.info(`Custom renderer registered for key: ${renderKey}`);
+    }
+
+    /**
+     * Define visual representation for a state, typically from StateConfiguration.
+     * @param {string} stateName - Name of the state.
+     * @param {Object} visualData - Visual definition from StateConfiguration.
+     *                               Example: { type: 'color', fill: '#ff0000', stroke: '#000000', strokeWidth: 1 }
+     *                               Example: { type: 'sprite', spriteKey: 'gem_red', frame: 'idle' }
+     *                               Example: { type: 'text', textKey: 'value', font: '16px Arial', color: 'black' }
+     *                               Example: { type: 'custom', renderKey: 'myCustomRenderer', customProperty: 'abc' }
+     */
+    defineStateVisual(stateName, visualData) {
+        // Ensure a base type if not specified, defaulting to color.
         const visualConfig = {
-            type: 'color',
-            fill: this.config.defaultStyle.fill,
-            stroke: this.config.defaultStyle.stroke,
-            strokeWidth: this.config.defaultStyle.strokeWidth,
-            zIndex: 0,
-            ...visual
+            type: visualData.type || 'color',
+            zIndex: visualData.zIndex || 0,
+            ...visualData // Spread the rest of the properties from visualData
         };
+
+        // If type is color, ensure default fill/stroke if not provided in visualData
+        if (visualConfig.type === 'color') {
+            visualConfig.fill = visualData.fill || this.config.defaultStyle.fill;
+            visualConfig.stroke = visualData.stroke || this.config.defaultStyle.stroke;
+            visualConfig.strokeWidth = visualData.strokeWidth || this.config.defaultStyle.strokeWidth;
+        }
         
         this.stateVisuals.set(stateName, visualConfig);
-        this.logger.info(`Visual defined for state: ${stateName}`, { 
-            type: visualConfig.type, 
-            fill: visualConfig.fill,
-            totalVisuals: this.stateVisuals.size 
+        this.logger.info(`Visual defined for state: ${stateName}`, {
+            type: visualConfig.type,
+            details: visualConfig,
+            totalVisuals: this.stateVisuals.size
         });
     }
 
@@ -109,11 +126,14 @@ export class CellRenderer {
             case 'sprite':
                 this._renderSpriteCell(ctx, x, y, size, visual, cellState);
                 break;
+            case 'text': // New case for text rendering
+                this._renderTextCell(ctx, x, y, size, visual, cellState);
+                break;
             case 'custom':
                 this._renderCustomCell(ctx, col, row, x, y, size, visual, cellState, options);
                 break;
             default:
-                this.logger.warn(`Unknown visual type: ${visual.type}`);
+                this.logger.warn(`Unknown visual type: ${visual.type} for state ${cellState.state}. Falling back to default.`);
                 this._renderColorCell(ctx, x, y, size, this.config.defaultStyle, cellState);
         }
     }
@@ -160,15 +180,12 @@ export class CellRenderer {
      */
     getVisualForState(stateName) {
         const visual = this.stateVisuals.get(stateName);
+        const visual = this.stateVisuals.get(stateName);
         if (!visual) {
-            this.logger.warn(`No visual defined for state: ${stateName}, using default. Available states: ${Array.from(this.stateVisuals.keys()).join(', ')}`);
-            // Return a proper visual object with type
-            return {
-                type: 'color',
-                ...this.config.defaultStyle
-            };
+            this.logger.warn(`No visual defined for state: ${stateName}, using default style. Available states: ${Array.from(this.stateVisuals.keys()).join(', ')}`);
+            return { ...this.config.defaultStyle }; // Return a copy of the default style
         }
-        this.logger.debug(`Visual found for state: ${stateName}`, { type: visual.type });
+        // this.logger.debug(`Visual found for state: ${stateName}`, { type: visual.type }); // Can be too verbose
         return visual;
     }
 
@@ -243,7 +260,27 @@ export class CellRenderer {
             type: 'custom',
             customRender: renderFunction,
             zIndex: config.zIndex || 0,
+            // textKey: config.textKey, // Key in cellState.data to get text from
+            // font: config.font,
+            // textColor: config.textColor,
+            // textAlign: config.textAlign,
+            // textBaseline: config.textBaseline,
             ...config
+        };
+    }
+
+    /**
+     * Create a custom render function style
+     * @param {string} renderKey - Key to identify the custom render function.
+     * @param {Object} [config={}] - Additional configuration for this visual.
+     * @returns {Object} Visual configuration object
+     */
+    static createCustomStyle(renderKey, config = {}) {
+        return {
+            type: 'custom',
+            renderKey: renderKey,
+            zIndex: config.zIndex || 0,
+            ...config // Pass any other properties needed by the custom renderer
         };
     }
 
@@ -253,13 +290,14 @@ export class CellRenderer {
      */
     _renderColorCell(ctx, x, y, size, visual, cellState) {
         // Fill cell
-        ctx.fillStyle = visual.fill;
+        ctx.fillStyle = visual.fill || this.config.defaultStyle.fill;
         ctx.fillRect(x, y, size, size);
-        
+
         // Stroke cell
-        if (visual.stroke && visual.strokeWidth > 0) {
+        const strokeWidth = visual.strokeWidth || this.config.defaultStyle.strokeWidth;
+        if (visual.stroke && strokeWidth > 0) {
             ctx.strokeStyle = visual.stroke;
-            ctx.lineWidth = visual.strokeWidth;
+            ctx.lineWidth = strokeWidth;
             ctx.strokeRect(x, y, size, size);
         }
     }
@@ -269,43 +307,96 @@ export class CellRenderer {
      * @private
      */
     _renderSpriteCell(ctx, x, y, size, visual, cellState) {
-        const sprite = this.engine.assetManager?.get(visual.sprite);
-        if (sprite && sprite.image) {
+        // Ensure assetManager is available
+        if (!this.engine.assetManager) {
+            this.logger.warn('AssetManager not available for sprite rendering. Falling back.');
+            this._renderColorCell(ctx, x, y, size, visual.baseStyle || this.config.defaultStyle, cellState);
+            return;
+        }
+
+        const spriteAsset = this.engine.assetManager.get(visual.spriteKey);
+        if (spriteAsset && spriteAsset.image) { // Assuming spriteAsset is an image or has an image property
             const scale = visual.scale || 1;
-            const spriteSize = size * scale;
-            const offsetX = (size - spriteSize) / 2;
-            const offsetY = (size - spriteSize) / 2;
+            const spriteWidth = visual.frameWidth || spriteAsset.image.width;
+            const spriteHeight = visual.frameHeight || spriteAsset.image.height;
             
+            // Calculate aspect ratio to fit within the cell size while maintaining proportions
+            let drawWidth = size * scale;
+            let drawHeight = size * scale;
+            const aspectRatio = spriteWidth / spriteHeight;
+
+            if (drawWidth / aspectRatio > size * scale) { // Too tall
+                drawWidth = (size*scale) * aspectRatio;
+            } else { // Too wide or just right
+                 drawHeight = (size*scale) / aspectRatio;
+            }
+            if (drawWidth > size*scale) drawWidth = size*scale;
+            if (drawHeight > size*scale) drawHeight = size*scale;
+
+
+            const offsetX = x + (size - drawWidth) / 2;
+            const offsetY = y + (size - drawHeight) / 2;
+
+            // TODO: Add support for sprite atlas frames if visual.frame is defined
             ctx.drawImage(
-                sprite.image,
-                x + offsetX,
-                y + offsetY,
-                spriteSize,
-                spriteSize
+                spriteAsset.image, // Source image
+                // TODO: Add sx, sy, sWidth, sHeight for sprite atlas frames
+                offsetX, // Destination x
+                offsetY, // Destination y
+                drawWidth, // Destination width
+                drawHeight // Destination height
             );
         } else {
-            // Fallback to color if sprite not available
-            this._renderColorCell(ctx, x, y, size, this.config.defaultStyle, cellState);
+            this.logger.warn(`Sprite asset not found or invalid: ${visual.spriteKey}. Falling back.`);
+            this._renderColorCell(ctx, x, y, size, visual.baseStyle || this.config.defaultStyle, cellState);
         }
     }
+
+    /**
+     * Render a text-based cell
+     * @private
+     */
+    _renderTextCell(ctx, x, y, size, visual, cellState) {
+        // First, render the background (optional, could be part of visual.baseStyle)
+        if (visual.fill) {
+             this._renderColorCell(ctx, x, y, size, visual, cellState); // Use visual for bg
+        }
+
+        const textContent = cellState.data && visual.textKey ? cellState.data[visual.textKey] : (visual.defaultText || '');
+        if (textContent === undefined || textContent === null) {
+            this.logger.debug(`No text content for state ${cellState.state} with textKey ${visual.textKey}`);
+            return;
+        }
+
+        ctx.font = visual.font || '16px Arial';
+        ctx.fillStyle = visual.textColor || '#000000';
+        ctx.textAlign = visual.textAlign || 'center';
+        ctx.textBaseline = visual.textBaseline || 'middle';
+
+        const textX = x + (visual.textAlign === 'center' ? size / 2 : (visual.textAlign === 'right' ? size - (visual.padding || 0) : (visual.padding || 0) ));
+        const textY = y + (visual.textBaseline === 'middle' ? size / 2 : (visual.textBaseline === 'bottom' ? size - (visual.padding || 0) : (visual.padding || 0)));
+
+        ctx.fillText(textContent.toString(), textX, textY);
+    }
+
 
     /**
      * Render a custom cell
      * @private
      */
     _renderCustomCell(ctx, col, row, x, y, size, visual, cellState, options) {
-        if (typeof visual.customRender === 'function') {
+        const renderFn = this.customRenderFunctions.get(visual.renderKey);
+        if (typeof renderFn === 'function') {
             try {
-                visual.customRender(ctx, col, row, x, y, size, cellState, options);
+                // Pass the visual data from StateConfiguration, the cellState, and the engine
+                renderFn(ctx, col, row, x, y, size, cellState, visual, this.engine, options);
             } catch (error) {
-                console.error(`❌ CellRenderer: Error in custom render for (${col}, ${row}):`, error);
-                this.logger.error(`Error in custom render function for state ${cellState.state}:`, error);
-                this._renderColorCell(ctx, x, y, size, this.config.defaultStyle, cellState);
+                this.logger.error(`Error in custom render function for key ${visual.renderKey} (state ${cellState.state}):`, error);
+                this._renderColorCell(ctx, x, y, size, visual.baseStyle || this.config.defaultStyle, cellState);
             }
         } else {
-            console.warn(`⚠️ CellRenderer: No custom render function for state: ${cellState.state}`);
-            this.logger.warn(`No custom render function defined for state: ${cellState.state}`);
-            this._renderColorCell(ctx, x, y, size, this.config.defaultStyle, cellState);
+            this.logger.warn(`No custom render function registered for key: ${visual.renderKey} (state ${cellState.state}). Falling back.`);
+            this._renderColorCell(ctx, x, y, size, visual.baseStyle || this.config.defaultStyle, cellState);
         }
     }
 

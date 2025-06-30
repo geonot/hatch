@@ -201,112 +201,6 @@ export class StateConfiguration {
     }
 
     /**
-     * Helper method to render revealed cells with proper content display
-     * @private
-     * @static
-     */
-    static _renderRevealedCell(ctx, x, y, size, cellState, constants) {
-        // Draw revealed background
-        ctx.fillStyle = constants.COLORS.REVEALED;
-        ctx.fillRect(x, y, size, size);
-        
-        // Draw border
-        ctx.strokeStyle = constants.COLORS.BORDER;
-        ctx.lineWidth = Math.max(1, size * 0.02);
-        ctx.strokeRect(x, y, size, size);
-        
-        // Get cell data to determine what to display
-        const data = cellState.data;
-        
-        if (data && data.isMine) {
-            // Draw mine
-            const centerX = x + size / 2;
-            const centerY = y + size / 2;
-            const radius = size * constants.SIZING.MINE_RADIUS_RATIO;
-            
-            // Mine background (red if game over mine)
-            if (data.gameOverMine) {
-                ctx.fillStyle = constants.COLORS.MINE_BG;
-                ctx.fillRect(x, y, size, size);
-            }
-            
-            // Draw mine body
-            ctx.fillStyle = constants.COLORS.MINE_BLACK;
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-            ctx.fill();
-            
-            // Draw mine spikes
-            const spikeLength = radius * constants.SIZING.SPIKE_LENGTH_RATIO;
-            ctx.strokeStyle = constants.COLORS.MINE_BLACK;
-            ctx.lineWidth = Math.max(constants.SIZING.MIN_LINE_WIDTH, size * 0.05);
-            
-            // Draw 8 spikes (4 cardinal + 4 diagonal)
-            for (let i = 0; i < 8; i++) {
-                const angle = (i * Math.PI) / 4;
-                const startX = centerX + Math.cos(angle) * radius;
-                const startY = centerY + Math.sin(angle) * radius;
-                const endX = centerX + Math.cos(angle) * (radius + spikeLength);
-                const endY = centerY + Math.sin(angle) * (radius + spikeLength);
-                
-                ctx.beginPath();
-                ctx.moveTo(startX, startY);
-                ctx.lineTo(endX, endY);
-                ctx.stroke();
-            }
-        } else if (data && data.neighborMines > 0) {
-            // Draw number
-            const number = data.neighborMines;
-            ctx.fillStyle = constants.COLORS.NUMBERS[number] || constants.COLORS.NUMBERS[8];
-            ctx.font = `bold ${Math.floor(size * constants.SIZING.NUMBER_FONT_RATIO)}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(number.toString(), x + size / 2, y + size / 2);
-        }
-        // Empty cells just show the revealed background (no additional content)
-    }
-
-    /**
-     * Helper method to render flagged cells with flag display
-     * @private
-     * @static
-     */
-    static _renderFlaggedCell(ctx, x, y, size, cellState, constants) {
-        // Draw hidden background
-        ctx.fillStyle = constants.COLORS.HIDDEN;
-        ctx.fillRect(x, y, size, size);
-        
-        // Draw border
-        ctx.strokeStyle = constants.COLORS.BORDER;
-        ctx.lineWidth = Math.max(1, size * 0.02);
-        ctx.strokeRect(x, y, size, size);
-        
-        // Draw flag
-        const centerX = x + size / 2;
-        const centerY = y + size / 2;
-        const flagWidth = size * constants.SIZING.FLAG_WIDTH_RATIO;
-        const flagHeight = size * constants.SIZING.FLAG_HEIGHT_RATIO;
-        const poleHeight = size * constants.SIZING.POLE_HEIGHT_RATIO;
-        
-        // Draw flag pole
-        ctx.strokeStyle = constants.COLORS.FLAG_POLE;
-        ctx.lineWidth = Math.max(constants.SIZING.MIN_LINE_WIDTH, size * 0.04);
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY - poleHeight / 2);
-        ctx.lineTo(centerX, centerY + poleHeight / 2);
-        ctx.stroke();
-        
-        // Draw flag fabric
-        ctx.fillStyle = constants.COLORS.FLAG_RED;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY - poleHeight / 2);
-        ctx.lineTo(centerX + flagWidth, centerY - poleHeight / 2 + flagHeight / 2);
-        ctx.lineTo(centerX, centerY - poleHeight / 2 + flagHeight);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    /**
      * Create a professional Minesweeper configuration showcasing the state system
      * @static
      * @returns {StateConfiguration} Configured instance for Minesweeper
@@ -377,14 +271,43 @@ export class StateConfiguration {
                     stroke: MINESWEEPER_CONSTANTS.COLORS.BORDER,
                     strokeWidth: 1
                 }),
-                
-                revealed: CellRenderer.createCustomStyle((ctx, col, row, x, y, size, cellState) => {
-                    StateConfiguration._renderRevealedCell(ctx, x, y, size, cellState, MINESWEEPER_CONSTANTS);
-                }),
-                
-                flagged: CellRenderer.createCustomStyle((ctx, col, row, x, y, size, cellState) => {
-                    StateConfiguration._renderFlaggedCell(ctx, x, y, size, cellState, MINESWEEPER_CONSTANTS);
-                })
+                // Game-specific rendering functions will be provided by the MinesweeperScene
+                // and registered with the CellRenderer instance.
+                // StateConfiguration now defines the *intent* and data for visuals.
+                revealed: {
+                    type: 'custom', // Indicates that a custom render function should be used
+                    renderKey: 'minesweeperRevealed', // Key to look up the function in CellRenderer
+                    // Pass constants for the renderer to use, if needed by the custom function
+                    // Alternatively, the custom function can have these constants internally.
+                    baseStyle: { // Fallback or base appearance if custom render fails or for animations
+                        fill: MINESWEEPER_CONSTANTS.COLORS.REVEALED,
+                        stroke: MINESWEEPER_CONSTANTS.COLORS.BORDER,
+                        strokeWidth: 1
+                    },
+                    // Data relevant to this state's visual appearance, can be used by the custom renderer
+                    // For example, colors for numbers, mine appearance details etc.
+                    // This is illustrative; the actual data structure can be adapted.
+                    numberColors: MINESWEEPER_CONSTANTS.COLORS.NUMBERS,
+                    mineColor: MINESWEEPER_CONSTANTS.COLORS.MINE_BLACK,
+                    mineBackgroundColor: MINESWEEPER_CONSTANTS.COLORS.MINE_BG,
+                    mineRadiusRatio: MINESWEEPER_CONSTANTS.SIZING.MINE_RADIUS_RATIO,
+                    spikeLengthRatio: MINESWEEPER_CONSTANTS.SIZING.SPIKE_LENGTH_RATIO,
+                    numberFontRatio: MINESWEEPER_CONSTANTS.SIZING.NUMBER_FONT_RATIO,
+                },
+                flagged: {
+                    type: 'custom',
+                    renderKey: 'minesweeperFlagged',
+                    baseStyle: {
+                        fill: MINESWEEPER_CONSTANTS.COLORS.HIDDEN, // Flag is drawn on hidden bg
+                        stroke: MINESWEEPER_CONSTANTS.COLORS.BORDER,
+                        strokeWidth: 1
+                    },
+                    flagColor: MINESWEEPER_CONSTANTS.COLORS.FLAG_RED,
+                    poleColor: MINESWEEPER_CONSTANTS.COLORS.FLAG_POLE,
+                    flagWidthRatio: MINESWEEPER_CONSTANTS.SIZING.FLAG_WIDTH_RATIO,
+                    flagHeightRatio: MINESWEEPER_CONSTANTS.SIZING.FLAG_HEIGHT_RATIO,
+                    poleHeightRatio: MINESWEEPER_CONSTANTS.SIZING.POLE_HEIGHT_RATIO,
+                }
             },
             transitions: {
                 hidden: ['revealed', 'flagged'],

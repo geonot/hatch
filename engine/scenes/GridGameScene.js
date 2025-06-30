@@ -64,9 +64,69 @@ export class GridGameScene extends Scene {
         this.stateConfiguration = null;
         this.stateChangeListeners = [];
 
+        // Game state properties
+        this._currentGameState = 'initial'; // Default initial game state
+        this._gameStateData = {};
+
         if (this.gridConfig.autoResize) {
             this._resizeHandler = this._handleResize.bind(this);
         }
+    }
+
+    /**
+     * Sets the current game state for the scene.
+     * Emits a 'gameStateChanged' event on the engine's event bus.
+     * @param {string} newState - The new game state (e.g., 'playing', 'paused', 'gameOver').
+     * @param {object} [data={}] - Optional data associated with this state change.
+     */
+    setGameState(newState, data = {}) {
+        const oldState = this._currentGameState;
+        if (oldState === newState) {
+            this._gameStateData = { ...this._gameStateData, ...data }; // Merge data if state is the same
+            return;
+        }
+
+        this.logger.info(`Game state changing from '${oldState}' to '${newState}'`, data);
+        this._currentGameState = newState;
+        this._gameStateData = data;
+
+        this.engine.eventBus.emit('gameStateChanged', {
+            scene: this,
+            previousState: oldState,
+            newState: this._currentGameState,
+            data: this._gameStateData
+        });
+
+        // Call lifecycle hook if it exists (e.g., onEnterPlayingState, onEnterGameOverState)
+        const hookName = `onEnter${newState.charAt(0).toUpperCase() + newState.slice(1)}State`;
+        if (typeof this[hookName] === 'function') {
+            this[hookName](oldState, this._gameStateData);
+        }
+    }
+
+    /**
+     * Gets the current game state of the scene.
+     * @returns {string} The current game state.
+     */
+    getGameState() {
+        return this._currentGameState;
+    }
+
+    /**
+     * Gets the data associated with the current game state.
+     * @returns {object} The current game state data.
+     */
+    getGameStateData() {
+        return this._gameStateData;
+    }
+
+    /**
+     * Checks if the scene is currently in the specified game state.
+     * @param {string} stateName - The game state to check.
+     * @returns {boolean} True if the current game state matches, false otherwise.
+     */
+    isGameState(stateName) {
+        return this._currentGameState === stateName;
     }
 
     initializeStateSystem(configInput) {
@@ -278,6 +338,88 @@ export class GridGameScene extends Scene {
         
     }
 
+    /**
+     * Maps a key press to a scene method.
+     * @param {string} keyCode - The key code (e.g., 'KeyR', 'Space', 'Enter').
+     * @param {Function} callback - The function to call when the key is just pressed.
+     *                              The function will be bound to `this` (the scene instance).
+     * @param {string} [triggerType='justPressed'] - Type of key event ('justPressed', 'pressed', 'justReleased').
+     */
+    mapInput(keyCode, callback, triggerType = 'justPressed') {
+        if (!this._inputMappings) {
+            this._inputMappings = [];
+        }
+        if (typeof callback !== 'function') {
+            this.logger.error(`Invalid callback provided for input mapping: ${keyCode}`);
+            return;
+        }
+        this._inputMappings.push({ keyCode, callback: callback.bind(this), triggerType });
+        this.logger.debug(`Input mapped: ${keyCode} (${triggerType}) to ${callback.name || 'anonymous function'}`);
+    }
+
+    /**
+     * Clears a specific input mapping or all mappings if no keyCode is provided.
+     * @param {string} [keyCode] - The key code to unmap. If null, all mappings are cleared.
+     * @param {Function} [callback] - Specific callback to remove for this key.
+     * @param {string} [triggerType] - Specific trigger type to remove.
+     */
+    unmapInput(keyCode, callback, triggerType) {
+        if (!this._inputMappings) return;
+        if (!keyCode) {
+            this._inputMappings = [];
+            this.logger.info('All input mappings cleared.');
+            return;
+        }
+        this._inputMappings = this._inputMappings.filter(mapping => {
+            const keyMatch = mapping.keyCode === keyCode;
+            const callbackMatch = callback ? mapping.callback.name === callback.name : true; // Approximation
+            const triggerMatch = triggerType ? mapping.triggerType === triggerType : true;
+            return !(keyMatch && callbackMatch && triggerMatch);
+        });
+    }
+
+    /**
+     * Processes registered input mappings. Called internally by the update loop.
+     * @private
+     */
+    _processInputMappings() {
+        if (!this._inputMappings || !this.engine.inputManager) {
+            return;
+        }
+
+        for (const mapping of this._inputMappings) {
+            let triggered = false;
+            switch (mapping.triggerType) {
+                case 'justPressed':
+                    if (this.engine.inputManager.isKeyJustPressed(mapping.keyCode)) {
+                        triggered = true;
+                    }
+                    break;
+                case 'pressed':
+                    if (this.engine.inputManager.isKeyPressed(mapping.keyCode)) {
+                        triggered = true;
+                    }
+                    break;
+                case 'justReleased':
+                    if (this.engine.inputManager.isKeyJustReleased(mapping.keyCode)) {
+                        triggered = true;
+                    }
+                    break;
+                default:
+                    this.logger.warn(`Unknown trigger type in input mapping: ${mapping.triggerType}`);
+            }
+
+            if (triggered) {
+                try {
+                    mapping.callback();
+                } catch (error) {
+                    this.logger.error(`Error in input mapping callback for ${mapping.keyCode}:`, error);
+                }
+            }
+        }
+    }
+
+
     init() {
         this.initializeGrid();
         
@@ -288,9 +430,17 @@ export class GridGameScene extends Scene {
         if (this.stateConfig.configuration || this.stateConfig.config) {
             this.initializeStateSystem();
         }
+        // Default game state after init
+        if (this.getGameState() === 'initial') {
+            this.setGameState('ready');
+        }
     }
 
     update(deltaTime) {
+        // Process declarative input mappings first
+        this._processInputMappings();
+
+        // Existing mouse input handling for grid interactions
         if (this.inputManager) {
             const mousePos = this.inputManager.getMousePosition();
             const gridPos = this.screenToGrid(mousePos.x, mousePos.y);
