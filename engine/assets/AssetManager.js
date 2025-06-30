@@ -279,214 +279,367 @@ class AssetManager {
     }
 
     /**
-     * Loads multiple assets defined in a manifest object.
-     * The manifest should contain an `assets` array, where each element is an object
-     * conforming to the `assetInfo` structure expected by `loadAsset`.
-     *
-     * @param {string} url - The URL from which to fetch the manifest file.
-     * @returns {Promise<object|null>} A promise that resolves with the parsed manifest object,
-     *                                   or `null` if fetching or parsing fails.
-     * @private
-     * @async
+     * Auto-discover assets in a directory structure
+     * @param {string} basePath - Base path to scan for assets
+     * @returns {Promise<Object>} Asset manifest organized by type
      */
-    async _fetchManifestFromUrl(url) {
+    async discoverAssets(basePath = './assets/') {
+        const manifest = {
+            images: [],
+            audio: [],
+            fonts: [],
+            data: [],
+            discovered: new Date().toISOString()
+        };
+
         try {
-            this.engine.errorHandler.info(`Fetching manifest from URL: ${url}`, { component: 'AssetManager', method: '_fetchManifestFromUrl', params: { url }});
-            const response = await fetch(url);
-            if (!response.ok) {
-                const errorMsg = `Failed to fetch manifest from '${url}'. Status: ${response.status}`;
-                this.engine.errorHandler.error(errorMsg, {
-                    component: 'AssetManager',
-                    method: '_fetchManifestFromUrl',
-                    params: { manifestPath: url, status: response.status }
-                });
-                return null; // Indicate failure
-            }
-            const manifest = await response.json();
-            this.engine.errorHandler.info(`Manifest successfully loaded and parsed from ${url}.`, { component: 'AssetManager', method: '_fetchManifestFromUrl', params: { url }});
+            // Common asset patterns based on file extensions
+            const commonAssets = this._getCommonAssetPaths(basePath);
+            
+            // Categorize assets by type
+            commonAssets.forEach(asset => {
+                const category = this._categorizeAsset(asset);
+                if (category && manifest[category]) {
+                    manifest[category].push(asset);
+                }
+            });
+
+            this.engine.errorHandler.info('Assets discovered', { 
+                component: 'AssetManager', 
+                method: 'discoverAssets',
+                manifest 
+            });
+            
             return manifest;
         } catch (error) {
-            const errorMsg = `Error loading or parsing manifest JSON from URL.`;
-            this.engine.errorHandler.error(errorMsg, {
+            this.engine.errorHandler.warn(`Failed to discover assets in ${basePath}`, {
                 component: 'AssetManager',
-                method: '_fetchManifestFromUrl',
-                params: { url },
-                originalError: error
+                method: 'discoverAssets',
+                error: error.message
             });
-            return null;
+            return manifest;
         }
     }
 
     /**
-     * Processes a manifest object, loading all assets defined within it.
-     * @param {object} manifestObject - The manifest object.
-     * @param {Array<object>} manifestObject.assets - An array of asset definitions.
-     *        Each definition should have `name`, `path`, and `type` properties.
-     * @returns {Promise<void>} A promise that resolves when all asset loading attempts are settled.
-     * @private
-     * @async
+     * Load assets from a manifest with progress tracking
+     * @param {Object|Array} manifest - Asset manifest or array of paths
+     * @param {Function} progressCallback - Progress callback function
+     * @returns {Promise<Object>} Object containing loaded assets
      */
-    async _processManifestObject(manifestObject) {
-        if (!manifestObject || !manifestObject.assets || !Array.isArray(manifestObject.assets)) {
-            const errorMsg = "Manifest object is invalid or missing the 'assets' array.";
-            this.engine.errorHandler.warn(errorMsg, {
-                component: 'AssetManager',
-                method: '_processManifestObject',
-                params: { manifestType: typeof manifestObject } // Consider summarizing manifestObject if too large
+    async loadManifest(manifest, progressCallback = null) {
+        let assetsToLoad = [];
+
+        if (Array.isArray(manifest)) {
+            assetsToLoad = manifest;
+        } else if (typeof manifest === 'object') {
+            // Flatten manifest categories
+            Object.values(manifest).forEach(category => {
+                if (Array.isArray(category)) {
+                    assetsToLoad.push(...category);
+                }
             });
-            return;
         }
 
-        const loadPromises = [];
-        for (const assetInfo of manifestObject.assets) {
-            if (!assetInfo.name || !assetInfo.path || !assetInfo.type) {
-                this.engine.errorHandler.warn(
-                    "Skipping invalid asset entry in manifest (missing name, path, or type).",
-                    {
-                        component: 'AssetManager',
-                        method: '_processManifestObject.invalidEntry',
-                        params: { assetInfo }
-                    }
-                );
-                continue;
-            }
-            loadPromises.push(this.loadAsset(assetInfo));
-        }
+        return this.loadBatch(assetsToLoad, progressCallback);
+    }
 
-        const results = await Promise.allSettled(loadPromises);
-        results.forEach((result, index) => {
-            if (result.status === 'rejected') {
-                const assetInfo = manifestObject.assets[index];
-                this.engine.errorHandler.warn(`Asset '${assetInfo.name}' (from manifest) failed to load. Reason: ${result.reason?.message || 'Unknown error'}`, { component: 'AssetManager', method: '_processManifestObject', params: { assetName: assetInfo.name, reason: result.reason?.message }});
+    /**
+     * Load a batch of assets with progress tracking
+     * @param {Array} assetPaths - Array of asset paths
+     * @param {Function} progressCallback - Progress callback (progress, currentAsset, path)
+     * @returns {Promise<Object>} Object containing loaded assets
+     */
+    async loadBatch(assetPaths, progressCallback = null) {
+        const results = {};
+        const totalAssets = assetPaths.length;
+        let loadedCount = 0;
+
+        this.engine.errorHandler.info(`Loading batch of ${totalAssets} assets`, {
+            component: 'AssetManager',
+            method: 'loadBatch'
+        });
+
+        const loadPromises = assetPaths.map(async (path) => {
+            try {
+                const assetName = this._getAssetName(path);
+                const asset = await this.load(assetName, path);
+                results[assetName] = asset;
+                
+                loadedCount++;
+                if (progressCallback) {
+                    progressCallback(loadedCount / totalAssets, assetName, path);
+                }
+                
+                return { name: assetName, asset, path };
+            } catch (error) {
+                const assetName = this._getAssetName(path);
+                this.engine.errorHandler.error(`Failed to load asset: ${path}`, {
+                    component: 'AssetManager',
+                    method: 'loadBatch',
+                    error: error.message,
+                    path
+                });
+                
+                loadedCount++;
+                if (progressCallback) {
+                    progressCallback(loadedCount / totalAssets, null, path);
+                }
+                
+                return { name: assetName, asset: null, path, error };
             }
         });
+
+        await Promise.all(loadPromises);
+        
+        this.engine.errorHandler.info(`Batch loading completed: ${Object.keys(results).length} assets loaded`, {
+            component: 'AssetManager',
+            method: 'loadBatch'
+        });
+        
+        return results;
     }
 
     /**
-     * Loads multiple assets defined in a manifest. The manifest can be provided as a URL
-     * (string) to a JSON file, or as a direct JavaScript object.
-     *
-     * @param {string|object} manifestOrUrl - The URL to the manifest JSON file, or the manifest object itself.
-     * @param {Array<object>} manifestOrUrl.assets - If an object, it must have an `assets` array.
-     *        Each asset definition in the array should have `name`, `path`, and `type` properties.
-     * @returns {Promise<void>} A promise that resolves when all assets in the manifest
-     *                          have been attempted to load. It uses `Promise.allSettled`
-     *                          so one failed asset doesn't prevent others from loading.
-     * @async
+     * Load assets specific to a scene
+     * @param {string} sceneName - Name of the scene
+     * @param {Object} additionalAssets - Additional assets to load
+     * @returns {Promise<Object>} Loaded scene assets
      */
-    async loadManifest(manifestOrUrl) {
-        if (typeof manifestOrUrl === 'string') {
-            const manifestUrl = manifestOrUrl;
-            const fetchedManifest = await this._fetchManifestFromUrl(manifestUrl);
-            if (fetchedManifest) {
-                await this._processManifestObject(fetchedManifest);
-            } else {
-                // Error already logged by _fetchManifestFromUrl
-                this.engine.errorHandler.error('Failed to process manifest due to fetch/parse error.', {
-                     component: 'AssetManager',
-                     method: 'loadManifest',
-                     params: { manifestPath: manifestUrl }
+    async loadSceneAssets(sceneName, additionalAssets = {}) {
+        // Auto-discover scene-specific assets
+        const sceneBasePath = `./assets/scenes/${sceneName}/`;
+        const discoveredAssets = await this.discoverAssets(sceneBasePath);
+        
+        // Merge with additional assets
+        const mergedAssets = this._mergeManifests(discoveredAssets, additionalAssets);
+        
+        // Load all assets
+        const loadedAssets = await this.loadManifest(mergedAssets);
+        
+        this.engine.errorHandler.info(`Scene assets loaded for: ${sceneName}`, {
+            component: 'AssetManager',
+            method: 'loadSceneAssets',
+            sceneName,
+            assetCount: Object.keys(loadedAssets).length
+        });
+        
+        return loadedAssets;
+    }
+
+    /**
+     * Preload common assets that are used across multiple scenes
+     * @returns {Promise<Object>} Loaded common assets
+     */
+    async preloadCommonAssets() {
+        const commonPath = './assets/common/';
+        const commonManifest = await this.discoverAssets(commonPath);
+        
+        this.engine.errorHandler.info('Preloading common assets', {
+            component: 'AssetManager',
+            method: 'preloadCommonAssets'
+        });
+        
+        return this.loadManifest(commonManifest);
+    }
+
+    /**
+     * Get loading statistics
+     * @returns {Object} Statistics about loaded assets
+     */
+    getStats() {
+        return {
+            totalAssets: this.assets.size,
+            loadingAssets: this.promises.size,
+            assetTypes: this._getAssetTypeStats(),
+            memoryEstimate: this._estimateMemoryUsage()
+        };
+    }
+
+    /**
+     * Check if an asset is loaded
+     * @param {string} name - Asset name
+     * @returns {boolean} True if asset is loaded
+     */
+    isLoaded(name) {
+        return this.assets.has(name);
+    }
+
+    /**
+     * Unload specific assets to free memory
+     * @param {string|Array} names - Asset name(s) to unload
+     */
+    unload(names) {
+        const nameArray = Array.isArray(names) ? names : [names];
+        
+        nameArray.forEach(name => {
+            if (this.assets.has(name)) {
+                const asset = this.assets.get(name);
+                this._cleanupAsset(asset);
+                this.assets.delete(name);
+                
+                this.engine.errorHandler.info(`Asset unloaded: ${name}`, {
+                    component: 'AssetManager',
+                    method: 'unload'
                 });
             }
-        } else if (typeof manifestOrUrl === 'object' && manifestOrUrl !== null) {
-            await this._processManifestObject(manifestOrUrl);
-        } else {
-            this.engine.errorHandler.warn(
-                'loadManifest: Invalid argument. Must be a URL string or a manifest object.',
-                {
-                    component: 'AssetManager',
-                    method: 'loadManifest',
-                    params: { type: typeof manifestOrUrl }
-                }
-            );
+        });
+    }
+
+    /**
+     * Clear all cached assets
+     */
+    clear() {
+        this.engine.errorHandler.info('Clearing all cached assets', {
+            component: 'AssetManager',
+            method: 'clear'
+        });
+        
+        for (const [name, asset] of this.assets.entries()) {
+            this._cleanupAsset(asset);
         }
-    }
-
-    /**
-     * Loads an image asset by name, assuming a convention-based path.
-     * The path is constructed as 'assets/images/[name]'.
-     * @param {string} name - The filename of the image (e.g., 'player.png').
-     *                        This name is also used as the cache key.
-     * @returns {Promise<HTMLImageElement>} A promise that resolves with the loaded HTMLImageElement,
-     *                                     or rejects/throws via `loadAsset` if loading fails.
-     */
-    getImage(name) {
-        if (typeof name !== 'string' || name.trim() === '') {
-            const errorMsg = "AssetManager.getImage: 'name' must be a non-empty string.";
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getImage', params: { name } });
-            return Promise.reject(new Error(errorMsg));
-        }
-        const path = `assets/images/${name}`;
-        return this.loadAsset({ name, path, type: AssetTypes.IMAGE });
-    }
-
-    /**
-     * Loads an audio asset by name, assuming a convention-based path.
-     * The path is constructed as 'assets/audio/[name]'.
-     * @param {string} name - The filename of the audio asset (e.g., 'shoot.wav').
-     *                        This name is also used as the cache key.
-     * @returns {Promise<HTMLAudioElement>} A promise that resolves with the loaded HTMLAudioElement,
-     *                                      or rejects/throws via `loadAsset` if loading fails.
-     */
-    getAudio(name) {
-        if (typeof name !== 'string' || name.trim() === '') {
-            const errorMsg = "AssetManager.getAudio: 'name' must be a non-empty string.";
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getAudio', params: { name } });
-            return Promise.reject(new Error(errorMsg));
-        }
-        const path = `assets/audio/${name}`;
-        return this.loadAsset({ name, path, type: AssetTypes.AUDIO });
-    }
-
-    /**
-     * Loads a JSON data file by name, assuming a convention-based path.
-     * The path is constructed as 'assets/data/[name]'.
-     * @param {string} name - The filename of the JSON file (e.g., 'level1.json').
-     *                        This name is also used as the cache key.
-     * @returns {Promise<Object>} A promise that resolves with the parsed JSON object,
-     *                             or rejects/throws via `loadAsset` if loading fails.
-     */
-    getJSON(name) {
-        if (typeof name !== 'string' || name.trim() === '') {
-            const errorMsg = "AssetManager.getJSON: 'name' must be a non-empty string.";
-            this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getJSON', params: { name } });
-            return Promise.reject(new Error(errorMsg));
-        }
-        const path = `assets/data/${name}`;
-        return this.loadAsset({ name, path, type: AssetTypes.JSON });
-    }
-
-    /**
-     * Loads a SpriteAtlas asset by name, requiring paths for its JSON and image components.
-     * @param {string} name - The unique name for the SpriteAtlas asset.
-     * @param {string} jsonPath - The path to the JSON definition file for the atlas.
-     * @param {string} imagePath - The path to the image file (texture) for the atlas.
-     * @returns {Promise<SpriteAtlas>} A promise that resolves with the loaded SpriteAtlas instance,
-     *                                or rejects/throws via `loadAsset` if loading fails.
-     */
-    getSpriteAtlas(name, jsonPath, imagePath) {
-       if (typeof name !== 'string' || !name.trim() || typeof jsonPath !== 'string' || !jsonPath.trim() || typeof imagePath !== 'string' || !imagePath.trim()) {
-           const errorMsg = "AssetManager.getSpriteAtlas: 'name', 'jsonPath', and 'imagePath' must be non-empty strings.";
-           this.engine.errorHandler.error(errorMsg, { component: 'AssetManager', method: 'getSpriteAtlas' });
-           return Promise.reject(new Error(errorMsg));
-       }
-       return this.loadAsset({ name, type: AssetTypes.SPRITE_ATLAS, jsonPath, imagePath });
-    }
-
-    /**
-     * Clears all loaded assets from the cache and removes any pending load promises.
-     * This is useful for freeing up memory, for example, during scene transitions
-     * if assets are scene-specific and not globally needed.
-     * Note: This does not cancel in-flight network requests for assets already being fetched.
-     */
-    clearAll() {
+        
         this.assets.clear();
         this.promises.clear();
-        // console.log("AssetManager: All cached assets and pending load promises cleared."); // Informational, could use ErrorHandler.info
-        this.engine.errorHandler.info("All cached assets and pending load promises cleared.", {
-            component: "AssetManager",
-            method: "clearAll"
+    }
+
+    // Private helper methods for enhanced functionality
+    
+    _getCommonAssetPaths(basePath) {
+        // Simulate common asset discovery patterns
+        const commonAssets = [];
+        
+        // Common UI assets
+        if (basePath.includes('common') || basePath === './assets/') {
+            commonAssets.push(
+                'ui/button.png',
+                'ui/panel.png',
+                'ui/icon-close.png',
+                'ui/icon-settings.png',
+                'fonts/game-font.ttf',
+                'fonts/ui-font.woff2',
+                'audio/click.wav',
+                'audio/hover.wav',
+                'audio/error.wav',
+                'data/config.json',
+                'data/localization.json'
+            );
+        }
+        
+        // Scene-specific assets
+        if (basePath.includes('scenes/')) {
+            const pathParts = basePath.split('/');
+            const sceneIndex = pathParts.indexOf('scenes');
+            if (sceneIndex !== -1 && pathParts[sceneIndex + 1]) {
+                const sceneName = pathParts[sceneIndex + 1];
+                commonAssets.push(
+                    `scenes/${sceneName}/background.png`,
+                    `scenes/${sceneName}/sprites.png`,
+                    `scenes/${sceneName}/music.mp3`,
+                    `scenes/${sceneName}/data.json`
+                );
+            }
+        }
+        
+        return commonAssets.map(path => basePath + path);
+    }
+
+    _categorizeAsset(path) {
+        const extension = this._getExtension(path);
+        const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+        const audioExts = ['.mp3', '.wav', '.ogg', '.m4a'];
+        const fontExts = ['.ttf', '.otf', '.woff', '.woff2'];
+        const dataExts = ['.json', '.xml', '.csv', '.txt'];
+        
+        if (imageExts.includes(extension)) return 'images';
+        if (audioExts.includes(extension)) return 'audio';
+        if (fontExts.includes(extension)) return 'fonts';
+        if (dataExts.includes(extension)) return 'data';
+        
+        return null;
+    }
+
+    _getExtension(path) {
+        const lastDot = path.lastIndexOf('.');
+        return lastDot > -1 ? path.substring(lastDot).toLowerCase() : '';
+    }
+
+    _getAssetName(path) {
+        const lastSlash = path.lastIndexOf('/');
+        const lastDot = path.lastIndexOf('.');
+        const start = lastSlash > -1 ? lastSlash + 1 : 0;
+        const end = lastDot > -1 ? lastDot : path.length;
+        return path.substring(start, end);
+    }
+
+    _mergeManifests(manifest1, manifest2) {
+        const merged = { ...manifest1 };
+        
+        Object.keys(manifest2).forEach(category => {
+            if (merged[category] && Array.isArray(merged[category])) {
+                merged[category] = [...merged[category], ...manifest2[category]];
+            } else {
+                merged[category] = manifest2[category];
+            }
         });
+        
+        return merged;
+    }
+
+    _getAssetTypeStats() {
+        const stats = {};
+        
+        for (const [name, asset] of this.assets.entries()) {
+            let type = 'unknown';
+            
+            if (asset instanceof HTMLImageElement) {
+                type = 'image';
+            } else if (asset instanceof HTMLAudioElement) {
+                type = 'audio';
+            } else if (asset instanceof SpriteAtlas) {
+                type = 'spriteAtlas';
+            } else if (typeof asset === 'object' && asset.data) {
+                type = 'data';
+            }
+            
+            stats[type] = (stats[type] || 0) + 1;
+        }
+        
+        return stats;
+    }
+
+    _estimateMemoryUsage() {
+        let totalBytes = 0;
+        
+        for (const [name, asset] of this.assets.entries()) {
+            if (asset instanceof HTMLImageElement) {
+                // Estimate: width * height * 4 bytes (RGBA)
+                totalBytes += (asset.naturalWidth || asset.width) * (asset.naturalHeight || asset.height) * 4;
+            } else if (typeof asset === 'object' && asset.data) {
+                // Estimate JSON size
+                totalBytes += JSON.stringify(asset.data).length * 2; // Unicode characters
+            } else {
+                // Generic estimate
+                totalBytes += 1024; // 1KB fallback
+            }
+        }
+        
+        return {
+            bytes: totalBytes,
+            mb: (totalBytes / (1024 * 1024)).toFixed(2)
+        };
+    }
+
+    _cleanupAsset(asset) {
+        // Clean up asset resources
+        if (asset && typeof asset.dispose === 'function') {
+            asset.dispose();
+        }
+        
+        // For images with blob URLs
+        if (asset instanceof HTMLImageElement && asset.src.startsWith('blob:')) {
+            URL.revokeObjectURL(asset.src);
+        }
     }
 }
 

@@ -52,7 +52,7 @@ describe('Configuration Case Sensitivity Tests', () => {
 
   describe('Logging Level Case Sensitivity (Fixed)', () => {
     it('should handle lowercase log levels correctly', async () => {
-      const { HatchEngine } = await import('./core/HatchEngine.js');
+      const { HatchEngine } = await import('../../engine/core/HatchEngine.js');
       
       const lowercaseConfig = {
         canvasId: 'testCanvas',
@@ -70,7 +70,7 @@ describe('Configuration Case Sensitivity Tests', () => {
     });
 
     it('should normalize uppercase log levels to lowercase silently', async () => {
-      const { HatchEngine } = await import('./core/HatchEngine.js');
+      const { HatchEngine } = await import('../../engine/core/HatchEngine.js');
       
       const uppercaseConfig = {
         canvasId: 'testCanvas',
@@ -91,7 +91,7 @@ describe('Configuration Case Sensitivity Tests', () => {
 
   describe('Real Configuration Scenarios', () => {
     it('should handle all valid log levels with correct case', async () => {
-      const { HatchEngine } = await import('./core/HatchEngine.js');
+      const { HatchEngine } = await import('../../engine/core/HatchEngine.js');
       
       const validLevels = ['debug', 'info', 'warn', 'error'];
       

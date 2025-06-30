@@ -1,4 +1,4 @@
-import GridManager from './GridManager.js'; // Default export
+import GridManager from '../../engine/grid/GridManager.js'; // Default export
 import { expect } from 'chai';
 import sinon from 'sinon';
 

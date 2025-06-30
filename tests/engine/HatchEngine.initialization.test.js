@@ -4,8 +4,8 @@
  * Tests the specific fix for Scene class assignment before SceneManager instantiation.
  */
 
-import { HatchEngine } from './HatchEngine.js';
-import Scene from '../scenes/Scene.js';
+import { HatchEngine } from '../../engine/core/HatchEngine.js';
+import Scene from '../../engine/scenes/Scene.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 
@@ -15,12 +15,33 @@ describe('HatchEngine Initialization Order Tests', () => {
   beforeEach(() => {
     sinon.restore();
 
-    // Use the global HTMLCanvasElement mock from jest.setup.js
+    // Create a comprehensive mock canvas using the global HTMLCanvasElement class
     const mockCanvas = new global.HTMLCanvasElement();
-    
-    // Add additional mocking for test-specific functionality
-    mockCanvas.addEventListener = sinon.stub();
-    mockCanvas.removeEventListener = sinon.stub();
+    // Override specific methods for testing
+    mockCanvas.getContext = sinon.stub().returns({
+      fillRect: sinon.stub(),
+      clearRect: sinon.stub(),
+      drawImage: sinon.stub(),
+      save: sinon.stub(),
+      restore: sinon.stub(),
+      translate: sinon.stub(),
+      scale: sinon.stub(),
+      rotate: sinon.stub(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      font: '10px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'top',
+      fillText: sinon.stub(),
+      strokeText: sinon.stub(),
+      beginPath: sinon.stub(),
+      closePath: sinon.stub(),
+      moveTo: sinon.stub(),
+      lineTo: sinon.stub(),
+      fill: sinon.stub(),
+      stroke: sinon.stub()
+    });
     mockCanvas.getBoundingClientRect = sinon.stub().returns({
       top: 0,
       left: 0,
@@ -32,9 +53,26 @@ describe('HatchEngine Initialization Order Tests', () => {
       y: 0
     });
 
-    // Mock DOM environment
-    global.document = {
-      getElementById: sinon.stub().returns(mockCanvas)
+    // Mock DOM environment - directly replace the getElementById method
+    const originalGetElementById = document.getElementById;
+    document.getElementById = function(id) {
+      // Return mock canvas for any canvas ID that starts with 'testCanvas'
+      if (id && id.startsWith('testCanvas')) {
+        return mockCanvas;
+      }
+      return null; // Default behavior for other IDs
+    };
+    
+    // Store original for cleanup
+    global._originalGetElementById = originalGetElementById;
+
+    global.navigator = {
+      userAgent: 'Test Browser'
+    };
+
+    global.window = {
+      ...global.window,
+      devicePixelRatio: 1
     };
 
     global.performance = {
@@ -55,7 +93,14 @@ describe('HatchEngine Initialization Order Tests', () => {
   });
 
   afterEach(() => {
-    delete global.document;
+    // Restore original getElementById method
+    if (global._originalGetElementById) {
+      document.getElementById = global._originalGetElementById;
+      delete global._originalGetElementById;
+    }
+    
+    delete global.navigator;
+    delete global.window;
     delete global.performance;
     delete global.requestAnimationFrame;
     delete global.cancelAnimationFrame;

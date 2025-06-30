@@ -1,19 +1,42 @@
-{
-  "preset": null,
-  "transform": {},
-  "testEnvironment": "node",
-  "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
-  "testMatch": [
-    "<rootDir>/tests/**/*.test.js"
-  ],
-  "moduleNameMapper": {
-    "^(\\.{1,2}/.*)$": "$1"
-  },
-  "collectCoverageFrom": [
-    "engine/**/*.js",
-    "!engine/**/*.test.js",
-    "!tests/**/*.js",
-    "!**/node_modules/**"
-  ],
-  "verbose": true
-}
+      
+<!-- Conceptual SVG for Inertial Clutch - Normal Feed State -->
+<svg width="250" height="250" viewBox="0 0 250 250" xmlns="http://www.w3.org/2000/svg">
+  <title>Inertial Clutch - Normal Feed</title>
+  <desc>Simplified cross-section of the inertial clutch mechanism during normal rope feed.</desc>
+
+  <!-- Housing/Outer Ratchet Ring (Cutaway) -->
+  <circle cx="125" cy="125" r="100" fill="none" stroke="#777" stroke-width="10" />
+  <!-- Internal Teeth of Ratchet Ring (Simplified) -->
+  <g id="ratchet-teeth">
+    <path d="M125 35 L130 45 L120 45 Z" fill="#777" transform="rotate(0 125 125)" />
+    <path d="M125 35 L130 45 L120 45 Z" fill="#777" transform="rotate(30 125 125)" />
+    <path d="M125 35 L130 45 L120 45 Z" fill="#777" transform="rotate(60 125 125)" />
+    <!-- ... repeat for full circle ... -->
+    <path d="M125 35 L130 45 L120 45 Z" fill="#777" transform="rotate(330 125 125)" />
+  </g>
+
+  <!-- Flywheel -->
+  <circle cx="125" cy="125" r="70" fill="#A0A0FF" stroke="#5050D0" stroke-width="3" />
+  <!-- Flywheel Hub/Axle -->
+  <circle cx="125" cy="125" r="10" fill="#6060E0" />
+
+  <!-- Centrifugal Pawls (Retracted) - 3 pawls shown -->
+  <g id="pawls-retracted">
+    <!-- Pawl 1 -->
+    <ellipse cx="125" cy="75" rx="20" ry="10" fill="#FFB347" stroke="#E69500" stroke-width="2" transform="rotate(0 125 125)" />
+    <circle cx="125" cy="90" r="4" fill="#E69500" transform="rotate(0 125 125)" /> <!-- Pivot -->
+    <!-- Pawl 2 -->
+    <ellipse cx="125" cy="75" rx="20" ry="10" fill="#FFB347" stroke="#E69500" stroke-width="2" transform="rotate(120 125 125)" />
+    <circle cx="125" cy="90" r="4" fill="#E69500" transform="rotate(120 125 125)" /> <!-- Pivot -->
+    <!-- Pawl 3 -->
+    <ellipse cx="125" cy="75" rx="20" ry="10" fill="#FFB347" stroke="#E69500" stroke-width="2" transform="rotate(240 125 125)" />
+    <circle cx="125" cy="90" r="4" fill="#E69500" transform="rotate(240 125 125)" /> <!-- Pivot -->
+  </g>
+
+  <!-- Rope Path around flywheel (conceptual) -->
+  <path d="M125 20 C100 20 70 50 70 125 S100 230 125 230" fill="none" stroke="#32CD32" stroke-width="4" stroke-dasharray="5 3" />
+  <text x="10" y="20" font-family="Arial, sans-serif" font-size="12" fill="#000">Clutch: Normal Feed</text>
+  <text x="125" y="130" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#FFF">Flywheel</text>
+</svg>
+
+    

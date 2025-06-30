@@ -16,6 +16,11 @@ import SceneManager from '../scenes/SceneManager.js';
 import Scene from '../scenes/Scene.js';
 import AudioManager from '../audio/AudioManager.js';
 import UIManager from '../ui/UIManager.js';
+import { PerformanceProfiler } from '../utils/PerformanceProfiler.js';
+import { RenderOptimizer } from '../rendering/RenderOptimizer.js';
+import { MemoryLeakDetector } from '../utils/MemoryLeakDetector.js';
+import { ViewportCuller } from '../rendering/ViewportCuller.js';
+import AssetCompressor from '../assets/AssetCompressor.js';
 
 /**
  * @class HatchEngine
@@ -338,29 +343,37 @@ export class HatchEngine {
             this.audioManager = new this.AudioManagerClass(this);
             this.uiManager = new this.UIManagerClass(this);
 
-            this.errorHandler.info('Core managers instantiated.', { component: 'HatchEngine', method: 'init' });
-
-        } catch (error) {
-            // Catch any other unexpected errors during init, including manager instantiation
-            // If critical already threw, this might not be reached, but good for safety.
-            // Ensure the error is properly handled by the errorHandler
-            const errorMessage = `Error during engine initialization or manager instantiation: ${error.message || error}`;
-            if (this.errorHandler) {
-                return this.errorHandler.critical(errorMessage, {
-                    component: 'HatchEngine',
-                    method: 'init.managers', // Indicates manager instantiation phase
-                    originalError: error
-                });
-            } else {
-                // Fallback if errorHandler itself is not available or failed
-                // Use the logger instance if available, otherwise fall back to console
-                this.logger ? this.logger.error(errorMessage, error) : console.error(errorMessage, error);
-                throw error; // Re-throw if errorHandler is not available
+            // Initialize performance profiler if enabled
+            const enableProfiling = this.hatchConfig.performance?.enableProfiling !== false;
+            if (enableProfiling) {
+                this.performanceProfiler = new PerformanceProfiler(this);
+                if (this.hatchConfig.performance?.enableMemoryTracking) {
+                    this.performanceProfiler.startMemoryTracking(
+                        this.hatchConfig.performance.memoryTrackingInterval || 1000
+                    );
+                }
             }
-        }
 
-        this.eventBus.emit(EngineEvents.INIT, this);
-        this.errorHandler.info('HatchEngine initialized', { component: 'HatchEngine', method: 'init' });
+            // Initialize rendering optimizer
+            this.renderOptimizer = new RenderOptimizer(this);
+            
+            // Initialize memory leak detector
+            this.memoryLeakDetector = new MemoryLeakDetector(this);
+            
+            // Initialize viewport culler
+            this.viewportCuller = new ViewportCuller(this);
+            
+            // Initialize asset compressor
+            this.assetCompressor = new AssetCompressor(this);
+
+            this.eventBus.emit(EngineEvents.INIT, this);
+            this.logger.info('HatchEngine initialized successfully');
+        } catch (error) {
+            return this.errorHandler.critical(
+                'Initialization failed',
+                { component: 'HatchEngine', method: 'init', originalError: error }
+            );
+        }
     }
 
     /**
@@ -431,6 +444,11 @@ export class HatchEngine {
 
         const deltaTime = (currentTime - this.lastTime) / 1000; // deltaTime in seconds
         this.lastTime = currentTime;
+
+        // Update performance metrics
+        if (this.performanceProfiler) {
+            this.performanceProfiler.updateFrameMetrics(deltaTime);
+        }
 
         try {
             this.eventBus.emit(EngineEvents.UPDATE, deltaTime);
@@ -512,5 +530,3 @@ export class HatchEngine {
         requestAnimationFrame(this._loop.bind(this));
     }
 }
-// Constructor changes have been applied.
-// The comments below this were related to the previous state and are now resolved.

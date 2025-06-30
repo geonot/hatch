@@ -8,7 +8,11 @@
     "hatch": "bin/hatch.js"
   },
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --coverage",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --watch",
+    "lint": "echo 'Linting not configured yet'",
+    "build": "echo 'Build completed - no compilation needed for ES modules'"
   },
   "keywords": [
     "cli",
@@ -27,6 +31,7 @@
     "chai": "^5.2.0",
     "chai-as-promised": "^8.0.1",
     "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.2",
     "sinon": "^18.0.0"
   }
 }

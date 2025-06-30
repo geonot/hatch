@@ -39,14 +39,14 @@ describe('MouseInput Import Tests', () => {
   describe('InputEvents Import', () => {
     it('should be able to import InputEvents without JSDoc interference', async () => {
       // Test that InputEvents can be imported successfully
-      const { InputEvents } = await import('../core/Constants.js');
+      const { InputEvents } = await import('../../engine/core/Constants.js');
       
       expect(InputEvents).to.exist;
       expect(typeof InputEvents).to.equal('object');
     });
 
     it('should have all required InputEvents constants available', async () => {
-      const { InputEvents } = await import('../core/Constants.js');
+      const { InputEvents } = await import('../../engine/core/Constants.js');
       
       // Verify key constants exist
       expect(InputEvents.GRID_MOUSEDOWN).to.be.a('string');
@@ -61,7 +61,7 @@ describe('MouseInput Import Tests', () => {
       let MouseInputModule;
       
       expect(async () => {
-        MouseInputModule = await import('../input/MouseInput.js');
+        MouseInputModule = await import('../../engine/input/MouseInput.js');
       }).to.not.throw();
       
       // Give time for import to complete
@@ -69,7 +69,21 @@ describe('MouseInput Import Tests', () => {
       
       // Verify MouseInput module exists and can be instantiated
       if (MouseInputModule && MouseInputModule.default) {
-        const mockCanvas = global.document.getElementById('test');
+        const mockCanvas = {
+          addEventListener: sinon.stub(),
+          removeEventListener: sinon.stub(),
+          getBoundingClientRect: sinon.stub().returns({
+            left: 0,
+            top: 0,
+            width: 800,
+            height: 600,
+            right: 800,
+            bottom: 600,
+            x: 0,
+            y: 0
+          }),
+          style: {}
+        };
         const mockEngine = {
           width: 800,
           height: 600,
@@ -117,7 +131,7 @@ describe('MouseInput Import Tests', () => {
       // Test that JSDoc comments are properly closed
       try {
         // Import should work without syntax errors from malformed JSDoc
-        const MouseInputModule = await import('../input/MouseInput.js');
+        const MouseInputModule = await import('../../engine/input/MouseInput.js');
         expect(MouseInputModule).to.exist;
       } catch (error) {
         // If error occurs, it shouldn't be related to JSDoc syntax
@@ -130,18 +144,33 @@ describe('MouseInput Import Tests', () => {
   describe('MouseInput Functionality', () => {
     it('should create MouseInput instance without import-related errors', async () => {
       try {
-        const MouseInputModule = await import('../input/MouseInput.js');
+        const MouseInputModule = await import('../../engine/input/MouseInput.js');
         
         if (MouseInputModule.default) {
+          const mockCanvas = {
+            addEventListener: sinon.stub(),
+            removeEventListener: sinon.stub(),
+            getBoundingClientRect: sinon.stub().returns({
+              left: 0,
+              top: 0,
+              width: 800,
+              height: 600,
+              right: 800,
+              bottom: 600,
+              x: 0,
+              y: 0
+            }),
+            style: {}
+          };
           const mockEngine = {
-            canvas: global.document.getElementById('test'),
+            canvas: mockCanvas,
             gridManager: null,
             eventBus: {
               emit: sinon.stub()
             }
           };
 
-          const mouseInput = new MouseInputModule.default(mockEngine);
+          const mouseInput = new MouseInputModule.default(mockCanvas, mockEngine);
           expect(mouseInput).to.exist;
         }
       } catch (error) {
@@ -153,15 +182,32 @@ describe('MouseInput Import Tests', () => {
 
     it('should access InputEvents constants within MouseInput context', async () => {
       try {
-        const MouseInputModule = await import('../input/MouseInput.js');
-        const { InputEvents } = await import('../core/Constants.js');
+        const MouseInputModule = await import('../../engine/input/MouseInput.js');
+        const { InputEvents } = await import('../../engine/core/Constants.js');
         
         // Verify that InputEvents constants are accessible
         expect(InputEvents.GRID_MOUSEDOWN).to.exist;
         
         if (MouseInputModule.default) {
+          const mockCanvas = {
+            addEventListener: sinon.stub(),
+            removeEventListener: sinon.stub(),
+            getBoundingClientRect: sinon.stub().returns({
+              left: 0,
+              top: 0,
+              width: 800,
+              height: 600,
+              right: 800,
+              bottom: 600,
+              x: 0,
+              y: 0
+            }),
+            style: {}
+          };
           const mockEngine = {
-            canvas: global.document.getElementById('test'),
+            width: 800,
+            height: 600,
+            canvas: mockCanvas,
             gridManager: {
               pixelToGrid: sinon.stub().returns({ gridX: 0, gridY: 0 }),
               isValidGridPosition: sinon.stub().returns(true)
@@ -171,7 +217,7 @@ describe('MouseInput Import Tests', () => {
             }
           };
 
-          const mouseInput = new MouseInputModule.default(mockEngine);
+          const mouseInput = new MouseInputModule.default(mockCanvas, mockEngine);
           
           // Simulate mouse event to test InputEvents usage
           const mockEvent = {

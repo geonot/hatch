@@ -1,7 +1,7 @@
-import { HatchEngine } from './HatchEngine.js';
+import { HatchEngine } from '../../engine/core/HatchEngine.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { ErrorLevels } from './Constants.js';
+import { ErrorLevels } from '../../engine/core/Constants.js';
 
 describe('HatchEngine', () => {
   let projectConfig;

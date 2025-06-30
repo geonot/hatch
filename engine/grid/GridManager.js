@@ -48,13 +48,14 @@ export class GridManager {
         this.numRows = config.numRows;
         this.tileWidth = config.tileWidth;
         this.tileHeight = config.tileHeight;
-        this.offsetX = config.offsetX || 0;
-        this.offsetY = config.offsetY || 0;
+        // Only set offsets if explicitly provided
+        this.offsetX = config.offsetX;
+        this.offsetY = config.offsetY;
         this.showGridLines = config.showGridLines === undefined ? true : config.showGridLines;
         this.gridLineColor = config.gridLineColor || 'rgba(255,255,255,0.3)';
 
         this.engine.errorHandler.info(
-            `GridManager initialized: ${this.numCols}x${this.numRows} grid, ${this.tileWidth}x${this.tileHeight} tiles, offset: (${this.offsetX}, ${this.offsetY}).`,
+            `GridManager initialized: ${this.numCols}x${this.numRows} grid, ${this.tileWidth}x${this.tileHeight} tiles, offset: (${this.offsetX ?? 'unset'}, ${this.offsetY ?? 'unset'}).`,
             { component: 'GridManager' }
         );
     }
@@ -69,7 +70,7 @@ export class GridManager {
      *                                                  (after considering camera).
      */
     screenToGrid(screenX, screenY) {
-        // If we have offsets, use them directly (for grid scenes)
+        // If we have explicitly set offsets, use them directly (for grid scenes)
         if (this.offsetX !== undefined && this.offsetY !== undefined) {
             const gridX = Math.floor((screenX - this.offsetX) / this.tileWidth);
             const gridY = Math.floor((screenY - this.offsetY) / this.tileHeight);

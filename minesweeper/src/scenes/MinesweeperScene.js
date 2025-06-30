@@ -1,102 +1,214 @@
-import GridGameScene from 'hatch-engine/scenes/GridGameScene.js';
+// filepath: /home/rome/Code/hatch/hatch/minesweeper/src/scenes/MinesweeperScene.js
+import { GameScene } from 'hatch-engine/ui/SceneTemplates.js';
+import { InputBindings } from 'hatch-engine/input/InputBindings.js';
+import { UIBuilderEnhanced } from 'hatch-engine/ui/UIBuilderEnhanced.js';
 import { StateConfiguration } from 'hatch-engine/grid/StateConfiguration.js';
-import { getLogger } from 'hatch-engine/core/Logger.js';
-import { InputEvents } from 'hatch-engine/core/Constants.js';
 
 const DIFFICULTY_LEVELS = {
-    BEGINNER: { cols: 9, rows: 9, mines: 10 },
-    INTERMEDIATE: { cols: 16, rows: 16, mines: 40 },
-    EXPERT: { cols: 30, rows: 16, mines: 99 }
+    BEGINNER: { name: 'Beginner', cols: 9, rows: 9, mines: 10, key: '1' },
+    INTERMEDIATE: { name: 'Intermediate', cols: 16, rows: 16, mines: 40, key: '2' },
+    EXPERT: { name: 'Expert', cols: 30, rows: 16, mines: 99, key: '3' }
 };
 
-const GAME_STATE = {
-    READY: 'ready',
-    PLAYING: 'playing', 
-    WON: 'won',
-    LOST: 'lost'
-};
-
-export default class MinesweeperScene extends GridGameScene {
+export default class MinesweeperScene extends GameScene {
     constructor(engine) {
-        const difficulty = DIFFICULTY_LEVELS.BEGINNER;
-        
         super(engine, {
-            cols: difficulty.cols,
-            rows: difficulty.rows,
+            // GameScene template handles UI setup, performance monitoring, input bindings, etc.
+            title: 'Minesweeper',
+            showPerformanceOverlay: false,
+            enableAutoWiring: true,
+            theme: 'minesweeper'
+        });
+        
+        // Game state - much simpler with template handling setup
+        this.difficulty = DIFFICULTY_LEVELS.BEGINNER;
+        this.gameState = 'ready';
+        this.mines = new Set();
+        this.firstClick = true;
+        this.flagCount = 0;
+        
+        // Grid will be created automatically by setupGrid()
+        this.gridManager = null;
+        this.stateManager = null;
+    }
+
+    init() {
+        super.init(); // GameScene handles UI, performance monitoring, etc.
+        
+        this.setupGrid();
+        this.setupInputBindings();
+        this.setupUI();
+        this.setupTheme();
+    }
+
+    setupGrid() {
+        // Create grid manager with current difficulty
+        this.gridManager = this.engine.createGridManager({
+            cols: this.difficulty.cols,
+            rows: this.difficulty.rows,
             maxCellSize: 40,
             minCellSize: 20,
-            margins: { top: 80, bottom: 80, left: 20, right: 20 },
+            margins: { top: 100, bottom: 120, left: 20, right: 20 },
             showGridLines: false,
             autoResize: true
-        }, {
+        });
+
+        // Create state manager for cell states
+        this.stateManager = this.engine.createStateManager({
             configuration: StateConfiguration.createMinesweeperConfig(),
             enableAnimations: false,
             enableDebug: false
         });
-        
-        this.logger = getLogger('Minesweeper');
-        this.difficulty = difficulty;
-        this.difficultyName = 'BEGINNER';
-        this.gameState = GAME_STATE.READY;
-        this.mines = new Set();
-        this.firstClick = true;
-        this.startTime = null;
-        this.endTime = null;
-        this.flagCount = 0;
-    }
 
-    init() {
-        try {
-            super.init();
-            this.setupGrid();
-            this.setupEventListeners();
-            this.engine.gridManager = this.gridManager;
-            
-            if (this.engine.canvas) {
-                this.engine.canvas.setAttribute('tabindex', '0');
-                this.engine.canvas.focus();
-                this.engine.canvas.style.outline = 'none';
-            }
-        } catch (error) {
-            this.logger.error('Failed to initialize Minesweeper scene:', error);
-            throw new Error(`Minesweeper Scene init() error: ${error.message}`);
-        }
-    }
-
-    setupGrid() {
-        for (let row = 0; row < this.gridConfig.rows; row++) {
-            for (let col = 0; col < this.gridConfig.cols; col++) {
+        // Initialize all cells
+        for (let row = 0; row < this.difficulty.rows; row++) {
+            for (let col = 0; col < this.difficulty.cols; col++) {
                 this.stateManager.setCellState(col, row, 'hidden', {
                     isMine: false,
                     neighborMines: 0,
-                    revealed: false,
-                    flagged: false
+                    revealed: false
                 });
             }
         }
+
+        // Auto-wire grid events using naming convention
+        this.autoWire({
+            'cellClick': (col, row) => this.onCellClick(col, row),
+            'cellRightClick': (col, row) => this.onCellRightClick(col, row)
+        });
     }
 
-    setupEventListeners() {
-        this.eventBus.on(InputEvents.GRID_MOUSEDOWN, (event) => {
-            if (this.gameState === GAME_STATE.WON || this.gameState === GAME_STATE.LOST) {
-                this.restartGame();
-                return;
-            }
+    setupInputBindings() {
+        // Use declarative input binding system
+        this.bindInput('minesweeper', {
+            'restart': 'KeyR',
+            'difficulty1': 'Digit1', 
+            'difficulty2': 'Digit2',
+            'difficulty3': 'Digit3'
+        });
+    }
 
-            const { gridX, gridY, button } = event;
+    setupUI() {
+        // Use enhanced UI builder for modern UI
+        this.ui.builder()
+            .panel('header')
+                .top().center().padding(20)
+                .layout('flex', { direction: 'row', justify: 'space-between', align: 'center' })
+                .children([
+                    this.ui.label('mineCounter')
+                        .text(() => `Mines: ${this.difficulty.mines - this.flagCount}`)
+                        .variant('counter'),
+                    
+                    this.ui.label('timer')
+                        .text(() => this.formatTime())
+                        .variant('counter'),
+                        
+                    this.ui.button('restartBtn')
+                        .text('New Game')
+                        .variant('primary')
+                        .onClick(() => this.restartGame())
+                ])
+            .end()
             
-            if (button === 0) {
-                this.handleCellClick(gridX, gridY);
-            } else if (button === 2) {
-                this.handleCellRightClick(gridX, gridY);
+            .panel('footer')
+                .bottom().center().padding(20)
+                .layout('flex', { direction: 'column', align: 'center', gap: 10 })
+                .children([
+                    this.ui.label('status')
+                        .text(() => this.getStatusText())
+                        .variant('status')
+                        .conditional(() => this.gameState !== 'ready' && this.gameState !== 'playing'),
+                        
+                    this.ui.label('difficulty')
+                        .text(() => `${this.difficulty.name} (${this.difficulty.cols}×${this.difficulty.rows})`)
+                        .variant('info'),
+                        
+                    this.ui.label('controls')
+                        .text('Left: Reveal | Right: Flag | R: Restart | 1/2/3: Difficulty')
+                        .variant('hint')
+                ])
+            .end()
+            
+            .modal('gameOver')
+                .conditional(() => this.gameState === 'won' || this.gameState === 'lost')
+                .children([
+                    this.ui.label('gameOverText')
+                        .text(() => this.gameState === 'won' ? '🎉 You Won!' : '💣 Game Over!')
+                        .variant('title'),
+                        
+                    this.ui.label('gameTime')
+                        .text(() => `Time: ${this.formatTime()}`)
+                        .variant('subtitle'),
+                        
+                    this.ui.button('playAgain')
+                        .text('Play Again')
+                        .variant('primary')
+                        .onClick(() => this.restartGame())
+                ])
+            .end();
+    }
+
+    setupTheme() {
+        // Define Minesweeper-specific theme
+        this.ui.registerTheme('minesweeper', {
+            colors: {
+                primary: '#2196F3',
+                success: '#4CAF50', 
+                danger: '#F44336',
+                background: '#f5f5f5',
+                surface: '#ffffff',
+                text: '#333333',
+                textSecondary: '#666666'
+            },
+            variants: {
+                counter: {
+                    fontSize: 18,
+                    fontWeight: 'bold',
+                    color: '#2196F3',
+                    backgroundColor: '#ffffff',
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: '2px solid #e0e0e0'
+                },
+                status: {
+                    fontSize: 24,
+                    fontWeight: 'bold',
+                    color: (state) => state.gameState === 'won' ? '#4CAF50' : '#F44336'
+                },
+                info: {
+                    fontSize: 16,
+                    color: '#666666'
+                },
+                hint: {
+                    fontSize: 14,
+                    color: '#999999',
+                    fontStyle: 'italic'
+                }
             }
         });
     }
 
-    handleCellClick(col, row) {
-        const cellState = this.stateManager.getCellState(col, row);
-        
-        if (!cellState || cellState.state !== 'hidden') {
+    // Auto-wired input handlers (naming convention)
+    onRestart() {
+        this.restartGame();
+    }
+
+    onDifficulty1() {
+        this.changeDifficulty('BEGINNER');
+    }
+
+    onDifficulty2() {
+        this.changeDifficulty('INTERMEDIATE');
+    }
+
+    onDifficulty3() {
+        this.changeDifficulty('EXPERT');
+    }
+
+    // Auto-wired grid event handlers
+    onCellClick(col, row) {
+        if (this.gameState === 'won' || this.gameState === 'lost') {
+            this.restartGame();
             return;
         }
 
@@ -104,15 +216,15 @@ export default class MinesweeperScene extends GridGameScene {
             this.generateMines(col, row);
             this.calculateNeighborNumbers();
             this.firstClick = false;
-            this.gameState = GAME_STATE.PLAYING;
-            this.startTime = Date.now();
+            this.gameState = 'playing';
+            this.startTimer();
         }
 
         this.revealCell(col, row);
         this.checkGameEnd();
     }
 
-    handleCellRightClick(col, row) {
+    onCellRightClick(col, row) {
         const cellState = this.stateManager.getCellState(col, row);
         
         if (!cellState || cellState.state === 'revealed') {
@@ -132,8 +244,8 @@ export default class MinesweeperScene extends GridGameScene {
         this.mines.clear();
         const availablePositions = [];
         
-        for (let row = 0; row < this.gridConfig.rows; row++) {
-            for (let col = 0; col < this.gridConfig.cols; col++) {
+        for (let row = 0; row < this.difficulty.rows; row++) {
+            for (let col = 0; col < this.difficulty.cols; col++) {
                 if (col !== avoidCol || row !== avoidRow) {
                     availablePositions.push({ col, row });
                 }
@@ -155,8 +267,8 @@ export default class MinesweeperScene extends GridGameScene {
     }
 
     calculateNeighborNumbers() {
-        for (let row = 0; row < this.gridConfig.rows; row++) {
-            for (let col = 0; col < this.gridConfig.cols; col++) {
+        for (let row = 0; row < this.difficulty.rows; row++) {
+            for (let col = 0; col < this.difficulty.cols; col++) {
                 const cellState = this.stateManager.getCellState(col, row);
                 if (cellState && !cellState.data.isMine) {
                     let mineCount = 0;
@@ -195,28 +307,29 @@ export default class MinesweeperScene extends GridGameScene {
         this.stateManager.setCellState(col, row, 'revealed', cellState.data);
 
         if (cellState.data.isMine) {
-            this.gameState = GAME_STATE.LOST;
-            this.endTime = Date.now();
+            this.gameState = 'lost';
+            this.stopTimer();
             this.revealAllMines();
             return;
         }
 
+        // Auto-reveal connected empty cells using flood fill
         if (cellState.data.neighborMines === 0) {
             this.floodFillReveal(col, row);
         }
     }
 
     floodFillReveal(startCol, startRow) {
-        const toReveal = [{col: startCol, row: startRow}];
+        const stack = [{col: startCol, row: startRow}];
         const visited = new Set();
-        
-        while (toReveal.length > 0) {
-            const {col, row} = toReveal.pop();
+
+        while (stack.length > 0) {
+            const {col, row} = stack.pop();
             const key = `${col},${row}`;
             
             if (visited.has(key)) continue;
             visited.add(key);
-            
+
             for (let dy = -1; dy <= 1; dy++) {
                 for (let dx = -1; dx <= 1; dx++) {
                     if (dx === 0 && dy === 0) continue;
@@ -226,13 +339,15 @@ export default class MinesweeperScene extends GridGameScene {
                     
                     if (this.isValidPosition(neighborCol, neighborRow)) {
                         const neighborState = this.stateManager.getCellState(neighborCol, neighborRow);
-                        
                         if (neighborState?.state === 'hidden' && !neighborState.data.isMine) {
                             neighborState.data.revealed = true;
                             this.stateManager.setCellState(neighborCol, neighborRow, 'revealed', neighborState.data);
                             
                             if (neighborState.data.neighborMines === 0) {
-                                toReveal.push({col: neighborCol, row: neighborRow});
+                                const neighborKey = `${neighborCol},${neighborRow}`;
+                                if (!visited.has(neighborKey)) {
+                                    stack.push({col: neighborCol, row: neighborRow});
+                                }
                             }
                         }
                     }
@@ -242,27 +357,26 @@ export default class MinesweeperScene extends GridGameScene {
     }
 
     revealAllMines() {
-        for (const mineKey of this.mines) {
-            const [col, row] = mineKey.split(',').map(Number);
-            const cellState = this.stateManager.getCellState(col, row);
-            
-            if (cellState && cellState.state !== 'revealed') {
-                cellState.data.revealed = true;
-                this.stateManager.setCellState(col, row, 'revealed', cellState.data);
+        for (let row = 0; row < this.difficulty.rows; row++) {
+            for (let col = 0; col < this.difficulty.cols; col++) {
+                const cellState = this.stateManager.getCellState(col, row);
+                if (cellState?.data?.isMine) {
+                    this.stateManager.setCellState(col, row, 'revealed', cellState.data);
+                }
             }
         }
     }
 
     checkGameEnd() {
-        if (this.gameState !== GAME_STATE.PLAYING) {
+        if (this.gameState !== 'playing') {
             return;
         }
 
         let revealedCount = 0;
-        const totalCells = this.gridConfig.cols * this.gridConfig.rows;
+        const totalCells = this.difficulty.cols * this.difficulty.rows;
         
-        for (let row = 0; row < this.gridConfig.rows; row++) {
-            for (let col = 0; col < this.gridConfig.cols; col++) {
+        for (let row = 0; row < this.difficulty.rows; row++) {
+            for (let col = 0; col < this.difficulty.cols; col++) {
                 const cellState = this.stateManager.getCellState(col, row);
                 if (cellState?.state === 'revealed' && !cellState.data.isMine) {
                     revealedCount++;
@@ -271,159 +385,84 @@ export default class MinesweeperScene extends GridGameScene {
         }
 
         if (revealedCount === totalCells - this.difficulty.mines) {
-            this.gameState = GAME_STATE.WON;
-            this.endTime = Date.now();
+            this.gameState = 'won';
+            this.stopTimer();
         }
     }
 
-    isValidPosition(col, row) {
-        return col >= 0 && col < this.gridConfig.cols && row >= 0 && row < this.gridConfig.rows;
-    }
-
-    update(deltaTime) {
-        super.update(deltaTime);
-        this.handleKeyboardInput();
-    }
-
-    handleKeyboardInput() {
-        if (!this.engine.inputManager) {
-            return;
-        }
-
-        if (this.engine.inputManager.isKeyJustPressed('KeyR')) {
+    changeDifficulty(level) {
+        if (DIFFICULTY_LEVELS[level]) {
+            this.difficulty = DIFFICULTY_LEVELS[level];
             this.restartGame();
-        }
-
-        if (this.engine.inputManager.isKeyJustPressed('Digit1')) {
-            this.changeDifficulty('BEGINNER');
-        }
-        if (this.engine.inputManager.isKeyJustPressed('Digit2')) {
-            this.changeDifficulty('INTERMEDIATE');
-        }
-        if (this.engine.inputManager.isKeyJustPressed('Digit3')) {
-            this.changeDifficulty('EXPERT');
         }
     }
 
     restartGame() {
-        this.gameState = GAME_STATE.READY;
+        this.gameState = 'ready';
         this.mines.clear();
         this.firstClick = true;
-        this.startTime = null;
-        this.endTime = null;
         this.flagCount = 0;
+        this.resetTimer();
         
-        for (let row = 0; row < this.gridConfig.rows; row++) {
-            for (let col = 0; col < this.gridConfig.cols; col++) {
-                this.stateManager.setCellState(col, row, 'hidden', {
-                    isMine: false,
-                    neighborMines: 0,
-                    revealed: false,
-                    flagged: false
-                }, { force: true });
-            }
-        }
+        // Recreate grid with new difficulty
+        this.setupGrid();
+    }
+
+    isValidPosition(col, row) {
+        return col >= 0 && col < this.difficulty.cols && row >= 0 && row < this.difficulty.rows;
+    }
+
+    // UI helper methods
+    formatTime() {
+        if (!this.startTime) return '00:00';
         
-        if (this.cellRenderer) {
-            this.cellRenderer.clearAnimations();
+        const elapsed = this.endTime ? (this.endTime - this.startTime) : (Date.now() - this.startTime);
+        const seconds = Math.floor(elapsed / 1000);
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+    }
+
+    getStatusText() {
+        switch (this.gameState) {
+            case 'won':
+                return '�� You Won!';
+            case 'lost':
+                return '💣 Game Over!';
+            default:
+                return '';
         }
     }
 
-    changeDifficulty(difficultyName) {
-        if (!DIFFICULTY_LEVELS[difficultyName]) {
-            return;
-        }
-        if (this.difficultyName === difficultyName) {
-            this.restartGame();
-            return;
-        }
+    // Timer methods (enhanced by GameScene template)
+    startTimer() {
+        this.startTime = Date.now();
+        this.endTime = null;
+    }
+
+    stopTimer() {
+        this.endTime = Date.now();
+    }
+
+    resetTimer() {
+        this.startTime = null;
+        this.endTime = null;
+    }
+
+    // Scene lifecycle - enhanced by GameScene template
+    update(deltaTime) {
+        super.update(deltaTime); // GameScene handles input binding updates, performance monitoring, etc.
         
-        this.difficulty = DIFFICULTY_LEVELS[difficultyName];
-        this.difficultyName = difficultyName;
-        this.gridConfig.cols = this.difficulty.cols;
-        this.gridConfig.rows = this.difficulty.rows;
-        this.initializeGrid();
-        this.engine.gridManager = this.gridManager;
-        
-        if (this.stateManager) {
-            this.initializeStateSystem();
-        }
-        
-        this.restartGame();
+        // Game-specific updates can go here
     }
 
     render(renderingEngine) {
-        super.render(renderingEngine);
-        this.renderUI(renderingEngine);
-    }
-
-    renderUI(renderingEngine) {
-        if (!renderingEngine || !renderingEngine.context || !renderingEngine.canvas) {
-            return;
-        }
+        super.render(renderingEngine); // GameScene handles UI rendering, performance overlay, etc.
         
-        const ctx = renderingEngine.context;
-        
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        
-        const uiTopY = Math.max(20, this.gridOffsetY - 40);
-        const uiBottomY = this.gridOffsetY + (this.gridConfig.rows * this.cellSize) + 20;
-        
-        const minesLeft = this.difficulty.mines - this.flagCount;
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(`Mines: ${minesLeft}`, this.gridOffsetX, uiTopY);
-        
-        let timeText = '00:00';
-        if (this.startTime) {
-            const elapsed = this.endTime ? (this.endTime - this.startTime) : (Date.now() - this.startTime);
-            const seconds = Math.floor(elapsed / 1000);
-            const minutes = Math.floor(seconds / 60);
-            timeText = `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
-        }
-        
-        ctx.textAlign = 'right';
-        const rightX = this.gridOffsetX + (this.gridConfig.cols * this.cellSize);
-        ctx.fillText(`Time: ${timeText}`, rightX, uiTopY);
-        
-        let statusText = '';
-        let statusColor = '#000000';
-        
-        switch (this.gameState) {
-            case GAME_STATE.WON:
-                statusText = 'You Win! Click to restart';
-                statusColor = '#00aa00';
-                break;
-            case GAME_STATE.LOST:
-                statusText = 'Game Over! Click to restart';
-                statusColor = '#cc0000';
-                break;
-        }
-        
-        if (statusText) {
-            ctx.fillStyle = statusColor;
-            ctx.textAlign = 'center';
-            ctx.font = 'bold 18px Arial';
-            const centerX = this.gridOffsetX + (this.gridConfig.cols * this.cellSize) / 2;
-            ctx.fillText(statusText, centerX, uiBottomY);
-        }
-        
-        ctx.fillStyle = '#333333';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        const centerX = this.gridOffsetX + (this.gridConfig.cols * this.cellSize) / 2;
-        ctx.fillText(`Difficulty: ${this.difficultyName} (${this.difficulty.cols}×${this.difficulty.rows})`, centerX, uiBottomY + 40);
-        
-        ctx.restore();
+        // Additional custom rendering can go here if needed
     }
 
     destroy() {
-        if (this.engine.gridManager === this.gridManager) {
-            this.engine.gridManager = null;
-        }
+        // GameScene template handles most cleanup automatically
         super.destroy();
     }
 }

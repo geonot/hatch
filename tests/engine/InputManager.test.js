@@ -1,4 +1,4 @@
-import InputManager from './InputManager.js';
+import InputManager from '../../engine/input/InputManager.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 

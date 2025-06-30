@@ -1,5 +1,5 @@
-import { ErrorHandler } from './ErrorHandler.js';
-import { ErrorLevels, ErrorEvents, LogLevelPriority } from './Constants.js'; // Import necessary constants
+import { ErrorHandler } from '../../engine/core/ErrorHandler.js';
+import { ErrorLevels, ErrorEvents, LogLevelPriority } from '../../engine/core/Constants.js'; // Import necessary constants
 import { expect } from 'chai';
 import sinon from 'sinon';
 

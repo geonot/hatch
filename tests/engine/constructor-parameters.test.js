@@ -4,9 +4,9 @@
  * Tests the specific fixes for constructor parameter patterns (separate params vs options object).
  */
 
-import { TileManager } from './tiles/TileManager.js';
-import { Sprite } from './rendering/Sprite.js';
-import { GridManager } from './grid/GridManager.js';
+import { TileManager } from '../../engine/tiles/TileManager.js';
+import { Sprite } from '../../engine/rendering/Sprite.js';
+import { GridManager } from '../../engine/grid/GridManager.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 

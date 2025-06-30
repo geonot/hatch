@@ -4,12 +4,12 @@
  * These tests ensure that the framework fixes don't regress in the future.
  */
 
-import { HatchEngine } from './core/HatchEngine.js';
-import { TileManager } from './tiles/TileManager.js';
-import { Sprite } from './rendering/Sprite.js';
-import { GridManager } from './grid/GridManager.js';
-import Scene from './scenes/Scene.js';
-import { InputEvents } from './core/Constants.js';
+import { HatchEngine } from '../../engine/core/HatchEngine.js';
+import { TileManager } from '../../engine/tiles/TileManager.js';
+import { Sprite } from '../../engine/rendering/Sprite.js';
+import { GridManager } from '../../engine/grid/GridManager.js';
+import Scene from '../../engine/scenes/Scene.js';
+import { InputEvents } from '../../engine/core/Constants.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 
@@ -21,10 +21,33 @@ describe('Regression Tests for Framework Fixes', () => {
   beforeEach(() => {
     sinon.restore();
 
-    // Use the global HTMLCanvasElement mock from jest.setup.js
+    // Create a comprehensive mock canvas using the global HTMLCanvasElement class
     mockCanvas = new global.HTMLCanvasElement();
-    
-    // Add additional mocking for test-specific functionality
+    // Override specific methods for testing
+    mockCanvas.getContext = sinon.stub().returns({
+      fillRect: sinon.stub(),
+      clearRect: sinon.stub(),
+      drawImage: sinon.stub(),
+      save: sinon.stub(),
+      restore: sinon.stub(),
+      translate: sinon.stub(),
+      scale: sinon.stub(),
+      rotate: sinon.stub(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      font: '10px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'top',
+      fillText: sinon.stub(),
+      strokeText: sinon.stub(),
+      beginPath: sinon.stub(),
+      closePath: sinon.stub(),
+      moveTo: sinon.stub(),
+      lineTo: sinon.stub(),
+      fill: sinon.stub(),
+      stroke: sinon.stub()
+    });
     mockCanvas.addEventListener = sinon.stub();
     mockCanvas.removeEventListener = sinon.stub();
     mockCanvas.getBoundingClientRect = sinon.stub().returns({
@@ -38,13 +61,30 @@ describe('Regression Tests for Framework Fixes', () => {
       y: 0
     });
 
-    global.document = {
-      getElementById: (id) => {
-        if (id === 'testCanvas' || id === 'gameCanvas') {
-          return mockCanvas;
-        }
-        return null;
+    // Mock DOM environment - directly replace the getElementById method
+    const originalGetElementById = document.getElementById;
+    document.getElementById = function(id) {
+      // Return mock canvas for any canvas ID that starts with 'testCanvas'
+      if (id && id.startsWith('testCanvas')) {
+        return mockCanvas;
       }
+      return null; // Default behavior for other IDs
+    };
+    
+    // Store original for cleanup
+    global._originalGetElementById = originalGetElementById;
+
+    global.navigator = {
+      userAgent: 'Test Browser'
+    };
+
+    global.window = {
+      ...global.window,
+      devicePixelRatio: 1
+    };
+
+    global.window = {
+      devicePixelRatio: 1
     };
 
     global.performance = {
@@ -94,7 +134,14 @@ describe('Regression Tests for Framework Fixes', () => {
   });
 
   afterEach(() => {
-    delete global.document;
+    // Restore original getElementById method
+    if (global._originalGetElementById) {
+      document.getElementById = global._originalGetElementById;
+      delete global._originalGetElementById;
+    }
+    
+    delete global.navigator;
+    delete global.window;
     delete global.performance;
     delete global.requestAnimationFrame;
     delete global.cancelAnimationFrame;

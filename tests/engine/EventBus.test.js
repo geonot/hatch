@@ -1,4 +1,4 @@
-import { EventBus } from './EventBus.js';
+import { EventBus } from '../../engine/core/EventBus.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 

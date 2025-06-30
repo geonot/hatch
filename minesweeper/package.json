@@ -1,18 +1,88 @@
 {
-  "name": "minesweeper",
-  "version": "1.0.0",
+  "name": "@hatch-engine/minesweeper-enhanced",
+  "version": "2.0.0",
   "type": "module",
-  "description": "A complete Minesweeper game implementation showcasing the capabilities of the Hatch 2D game engine framework.",
-  "main": "vite.config.js",
+  "description": "Enhanced Minesweeper game showcasing the full capabilities of the Hatch 2D game engine with modern UI, boilerplate reduction, and enterprise-grade features",
+  "main": "src/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "preview": "vite preview --host",
+    "lint": "eslint src --ext .js",
+    "test": "vitest",
+    "analyze": "vite-bundle-analyzer"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "minesweeper",
+    "game",
+    "hatch-engine", 
+    "2d-game",
+    "web-game",
+    "puzzle",
+    "javascript",
+    "canvas",
+    "ui-framework",
+    "game-engine",
+    "boilerplate-reduction",
+    "performance-monitoring",
+    "responsive-design"
+  ],
+  "author": {
+    "name": "Hatch Engine Team",
+    "url": "https://github.com/hatch-engine"
+  },
+  "license": "MIT",
+  "homepage": "https://hatch-engine.github.io/minesweeper",
+  "repository": {
+    "type": "git", 
+    "url": "https://github.com/hatch-engine/hatch.git",
+    "directory": "minesweeper"
+  },
+  "bugs": {
+    "url": "https://github.com/hatch-engine/hatch/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ],
   "devDependencies": {
-    "vite": "^7.0.0"
+    "vite": "^5.0.0",
+    "eslint": "^8.0.0",
+    "vitest": "^1.0.0",
+    "vite-bundle-analyzer": "^0.9.0"
+  },
+  "dependencies": {
+    "hatch-engine": "^2.0.0"
+  },
+  "files": [
+    "src",
+    "index.html",
+    "README.md"
+  ],
+  "gameEngine": {
+    "name": "Hatch Engine",
+    "version": "2.0.0",
+    "features": [
+      "Enhanced UI System",
+      "Boilerplate Reduction",
+      "Performance Monitoring", 
+      "Auto-Wiring",
+      "Scene Templates",
+      "Input Bindings",
+      "Responsive Design",
+      "Theme System"
+    ]
+  },
+  "deployment": {
+    "build": "vite build",
+    "outputDir": "dist",
+    "assetsDir": "assets",
+    "publicPath": "./",
+    "minify": true,
+    "sourcemap": true
   }
 }

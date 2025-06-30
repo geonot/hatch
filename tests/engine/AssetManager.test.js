@@ -1,4 +1,4 @@
-import AssetManager from './AssetManager.js';
+import AssetManager from '../../engine/assets/AssetManager.js';
 import { expect } from 'chai';
 import sinon from 'sinon';
 

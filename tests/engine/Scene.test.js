@@ -1,4 +1,4 @@
-import Scene from './Scene.js'; // Default export
+import Scene from '../../engine/scenes/Scene.js'; // Default export
 import { expect } from 'chai';
 import sinon from 'sinon';
 

@@ -1,5 +1,11 @@
 /**
- * @file InputManager.js
+ * @file Input * @property {import('../core/HatchEngine.js').HatchEngine} engine - Reference to the HatchEngine instance.
+ * @property {KeyboardInput} keyboard - The keyboard input handler instance.
+ * @property {MouseInput} mouse - The mouse input handler instance.
+ * @property {TouchInputManager} touch - The touch input handler instance.
+ // @property {GamepadInput} gamepad - Future: The gamepad input handler instance.
+ * @property {boolean} preventContextMenu - Configuration option indicating if the default browser context menu
+ *                                          is (or should be) prevented on the mouse input target element.r.js
  * @description Central manager for all input sources like keyboard and mouse
  * for the HatchEngine. It consolidates input handling and provides a unified API
  * for querying input states.
@@ -7,6 +13,7 @@
 
 import KeyboardInput from './KeyboardInput.js';
 import MouseInput from './MouseInput.js';
+import { TouchInputManager } from './TouchInputManager.js';
 // import GamepadInput from './GamepadInput.js'; // Future: Gamepad support
 
 /**
@@ -36,6 +43,7 @@ class InputManager {
      * @param {boolean} [options.preventContextMenu=true] - If true, attempts to prevent the default browser
      *                                                    context menu when right-clicking on the `canvasElement`.
      *                                                    (Actual prevention is handled within `MouseInput`).
+     * @param {boolean} [options.enableTouch=true] - If true, initializes touch input handling for mobile devices.
      * @throws {Error} If `engine` or `canvasElement` is not provided, as they are essential.
      */
     constructor(engine, canvasElement, options = {}) {
@@ -72,6 +80,21 @@ class InputManager {
             this.keyboard = new KeyboardInput(keyboardTarget); // Use validated or default target
             /** @type {MouseInput} Instance of the mouse input handler. */
             this.mouse = new MouseInput(canvasElement, engine);
+            
+            // Initialize touch input if enabled and supported
+            /** @type {TouchInputManager} Instance of the touch input handler. */
+            this.touch = null;
+            if (validOptions.enableTouch !== false && 'ontouchstart' in window) {
+                try {
+                    this.touch = new TouchInputManager(canvasElement, engine.eventBus);
+                    this.engine.errorHandler.info('Touch input initialized', { component: 'InputManager' });
+                } catch (touchError) {
+                    this.engine.errorHandler.warn('Failed to initialize touch input', { 
+                        component: 'InputManager', 
+                        error: touchError.message 
+                    });
+                }
+            }
         } catch (error) {
             this.engine.errorHandler.critical('Failed to initialize input handlers (KeyboardInput or MouseInput).', {
                 component: 'InputManager',
@@ -102,7 +125,7 @@ class InputManager {
     }
 
     /**
-     * Updates all input handlers (keyboard, mouse).
+     * Updates all input handlers (keyboard, mouse, touch).
      * This method should be called once per game frame by the HatchEngine's main loop
      * to clear "just pressed/released" states and prepare for the next frame's input.
      *
@@ -119,6 +142,11 @@ class InputManager {
             if (this.mouse) this.mouse.update();
         } catch (e) {
             this.engine.errorHandler.error('Error during MouseInput update.', { component: 'InputManager', method: 'update', originalError: e, inputHandler: 'MouseInput' });
+        }
+        try {
+            if (this.touch) this.touch.update(deltaTime);
+        } catch (e) {
+            this.engine.errorHandler.error('Error during TouchInput update.', { component: 'InputManager', method: 'update', originalError: e, inputHandler: 'TouchInput' });
         }
         // if (this.gamepad) this.gamepad.update(deltaTime); // Future gamepad support
     }
@@ -246,6 +274,43 @@ class InputManager {
         return null;
     }
 
+    // --- Touch Convenience Methods ---
+    /**
+     * Gets the number of active touches
+     * @returns {number} Number of active touches
+     */
+    getTouchCount() {
+        return this.touch ? this.touch.getTouchCount() : 0;
+    }
+
+    /**
+     * Gets all active touches
+     * @returns {Array} Array of active touch objects
+     */
+    getActiveTouches() {
+        return this.touch ? this.touch.getActiveTouches() : [];
+    }
+
+    /**
+     * Gets a specific touch by ID
+     * @param {number} id - Touch identifier
+     * @returns {Object|null} Touch object or null
+     */
+    getTouchById(id) {
+        return this.touch ? this.touch.getTouchById(id) : null;
+    }
+
+    /**
+     * Configure touch gesture thresholds
+     * @param {string} type - Gesture type
+     * @param {number} value - Threshold value
+     */
+    setTouchGestureThreshold(type, value) {
+        if (this.touch) {
+            this.touch.setGestureThreshold(type, value);
+        }
+    }
+
     // --- Gamepad Convenience Methods (Example for future expansion) ---
     // /**
     //  * Checks if a gamepad button is pressed.
@@ -286,6 +351,13 @@ class InputManager {
             }
         } catch (e) {
             this.engine.errorHandler.warn('Error detaching mouse events.', { component: 'InputManager', method: 'destroy', originalError: e, inputHandler: 'MouseInput' });
+        }
+        try {
+            if (this.touch) {
+                this.touch.destroy();
+            }
+        } catch (e) {
+            this.engine.errorHandler.warn('Error destroying touch input.', { component: 'InputManager', method: 'destroy', originalError: e, inputHandler: 'TouchInput' });
         }
         // if (this.gamepad) this.gamepad.destroy();
         this.engine.errorHandler.info("InputManager Destroyed and event listeners detached.", {
