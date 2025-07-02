@@ -80,8 +80,21 @@ describe('Import/Export Type Tests', () => {
         expect(TileManager).to.exist;
 
         // Verify they can be used together
+        const mockCanvas = {
+          addEventListener: sinon.stub(),
+          removeEventListener: sinon.stub(),
+          getBoundingClientRect: sinon.stub().returns({ left: 0, top: 0, width: 800, height: 600 }),
+          style: {},
+          width: 800,
+          height: 600
+        };
         const mockEngine = {
-          assetManager: { loadAsset: sinon.stub().resolves({}) },
+          assetManager: {
+            loadAsset: sinon.stub().resolves({}),
+            discoverAssets: sinon.stub().resolves({ images: [], audio: [], data: [] })
+          },
+          canvas: mockCanvas,
+          hatchConfig: { instructions: [], instructionsKey: 'KeyH' },
           renderingEngine: { 
             camera: { applyTransform: sinon.stub() },
             add: sinon.stub(),
@@ -94,7 +107,9 @@ describe('Import/Export Type Tests', () => {
             error: sinon.stub(),
             warn: sinon.stub(),
             info: sinon.stub()
-          }
+          },
+          // Add other necessary mocks if Scene constructor/init needs them
+          inputManager: { addEventListener: sinon.stub(), removeEventListener: sinon.stub() }
         };
 
         expect(() => {
@@ -243,8 +258,21 @@ describe('Import/Export Type Tests', () => {
           }
         }
 
+        const mockCanvasComplex = {
+          addEventListener: sinon.stub(),
+          removeEventListener: sinon.stub(),
+          getBoundingClientRect: sinon.stub().returns({ left: 0, top: 0, width: 800, height: 600 }),
+          style: {},
+          width: 800,
+          height: 600
+        };
         const mockEngine = {
-          assetManager: { loadAsset: sinon.stub().resolves({}) },
+          assetManager: {
+            loadAsset: sinon.stub().resolves({}),
+            discoverAssets: sinon.stub().resolves({ images: [], audio: [], data: [] })
+          },
+          canvas: mockCanvasComplex,
+          hatchConfig: { instructions: [], instructionsKey: 'KeyH' },
           renderingEngine: { 
             camera: { applyTransform: sinon.stub() },
             add: sinon.stub(),
@@ -257,7 +285,8 @@ describe('Import/Export Type Tests', () => {
             error: sinon.stub(),
             warn: sinon.stub(),
             info: sinon.stub()
-          }
+          },
+          inputManager: { addEventListener: sinon.stub(), removeEventListener: sinon.stub() }
         };
 
         const scene = new ComplexTestScene(mockEngine);
