@@ -328,76 +328,126 @@ class AssetManager {
      * @returns {Promise<Object>} Object containing loaded assets
      */
     async loadManifest(manifest, progressCallback = null) {
-        let assetsToLoad = [];
+        let assetInfosToLoad = [];
 
-        if (Array.isArray(manifest)) {
-            assetsToLoad = manifest;
-        } else if (typeof manifest === 'object') {
-            // Flatten manifest categories
-            Object.values(manifest).forEach(category => {
+        if (typeof manifest === 'string') { // It's a URL to a manifest file
+            this.engine.errorHandler.info(`Fetching manifest from URL: ${manifest}`, { component: 'AssetManager', method: 'loadManifest' });
+            try {
+                const fetchedManifest = await this.loadAsset({ name: `manifest_${this._getAssetName(manifest)}`, path: manifest, type: AssetTypes.JSON });
+                if (fetchedManifest && fetchedManifest.assets && Array.isArray(fetchedManifest.assets)) {
+                    assetInfosToLoad = fetchedManifest.assets;
+                } else {
+                    this.engine.errorHandler.warn(`Fetched manifest from '${manifest}' is invalid or missing 'assets' array.`, { component: 'AssetManager', method: 'loadManifest', params: { manifestPath: manifest }});
+                    return {}; // Return empty if manifest format is wrong
+                }
+            } catch (error) {
+                this.engine.errorHandler.error(`Failed to fetch manifest from '${manifest}'. ${error.message}`, { component: 'AssetManager', method: 'loadManifest', params: { manifestPath: manifest }, originalError: error });
+                return {}; // Return empty on fetch error
+            }
+        } else if (Array.isArray(manifest)) { // It's an array of asset info objects (or potentially paths, though paths are less robust here)
+            assetInfosToLoad = manifest.map(item =>
+                typeof item === 'string' ? { name: this._getAssetName(item), path: item, type: this._inferAssetTypeFromPath(item) } : item
+            );
+        } else if (typeof manifest === 'object' && manifest !== null && manifest.assets && Array.isArray(manifest.assets)) { // It's a manifest object
+            assetInfosToLoad = manifest.assets;
+        } else if (typeof manifest === 'object' && manifest !== null) { // It's a flat manifest object with categories
+             Object.values(manifest).forEach(category => {
                 if (Array.isArray(category)) {
-                    assetsToLoad.push(...category);
+                    assetInfosToLoad.push(...category);
                 }
             });
+        } else {
+            this.engine.errorHandler.warn("Manifest object is invalid or missing the 'assets' array.", { component: 'AssetManager', method: 'loadManifest', params: { manifest }});
+            return {};
         }
 
-        return this.loadBatch(assetsToLoad, progressCallback);
+        // Filter out any invalid entries before batching
+        assetInfosToLoad = assetInfosToLoad.filter(assetInfo => {
+            if (assetInfo && typeof assetInfo.name === 'string' && typeof assetInfo.type === 'string') {
+                return true;
+            }
+            this.engine.errorHandler.warn(`Skipping invalid asset entry in manifest. Missing 'name' or 'type'.`, { component: 'AssetManager', method: 'loadManifest', params: { assetInfo } });
+            return false;
+        });
+
+        return this.loadBatch(assetInfosToLoad, progressCallback);
     }
 
     /**
      * Load a batch of assets with progress tracking
-     * @param {Array} assetPaths - Array of asset paths
-     * @param {Function} progressCallback - Progress callback (progress, currentAsset, path)
-     * @returns {Promise<Object>} Object containing loaded assets
+     * @param {Array<Object>} assetInfos - Array of asset info objects.
+     * @param {Function} [progressCallback] - Progress callback (progress, assetName, assetPathOrInfo)
+     * @returns {Promise<Object>} Object containing loaded assets, keyed by name.
      */
-    async loadBatch(assetPaths, progressCallback = null) {
+    async loadBatch(assetInfos, progressCallback = null) {
         const results = {};
-        const totalAssets = assetPaths.length;
+        if (!Array.isArray(assetInfos) || assetInfos.length === 0) {
+            this.engine.errorHandler.debug('loadBatch called with empty or invalid assetInfos array.', { component: 'AssetManager', method: 'loadBatch' });
+            return results;
+        }
+        const totalAssets = assetInfos.length;
         let loadedCount = 0;
 
-        this.engine.errorHandler.info(`Loading batch of ${totalAssets} assets`, {
+        this.engine.errorHandler.info(`Loading batch of ${totalAssets} assets.`, {
             component: 'AssetManager',
             method: 'loadBatch'
         });
 
-        const loadPromises = assetPaths.map(async (path) => {
+        const loadPromises = assetInfos.map(async (assetInfo) => {
+            // Ensure assetInfo is a valid object with name and type
+            if (!assetInfo || typeof assetInfo.name !== 'string' || typeof assetInfo.type !== 'string') {
+                this.engine.errorHandler.warn('Skipping invalid assetInfo in loadBatch.', { component: 'AssetManager', method: 'loadBatch', params: { assetInfo }});
+                loadedCount++; // Still count it towards progress to avoid getting stuck
+                if (progressCallback) {
+                    progressCallback(loadedCount / totalAssets, null, assetInfo);
+                }
+                return null; // Skip this invalid entry
+            }
+
             try {
-                const assetName = this._getAssetName(path);
-                const asset = await this.load(assetName, path);
-                results[assetName] = asset;
+                const asset = await this.loadAsset(assetInfo); // Use loadAsset
+                if (asset) { // loadAsset might resolve to null for unsupported types
+                  results[assetInfo.name] = asset;
+                }
                 
                 loadedCount++;
                 if (progressCallback) {
-                    progressCallback(loadedCount / totalAssets, assetName, path);
+                    progressCallback(loadedCount / totalAssets, assetInfo.name, assetInfo.path || assetInfo.name);
                 }
-                
-                return { name: assetName, asset, path };
+                return asset;
             } catch (error) {
-                const assetName = this._getAssetName(path);
-                this.engine.errorHandler.error(`Failed to load asset: ${path}`, {
-                    component: 'AssetManager',
-                    method: 'loadBatch',
-                    error: error.message,
-                    path
-                });
-                
+                // loadAsset already logs to errorHandler.critical and re-throws.
+                // Here, we just ensure progress callback is called.
+                this.engine.errorHandler.warn(`Asset '${assetInfo.name}' (from batch) failed to load. Reason: ${error.message}`, { component: 'AssetManager', method: 'loadBatch', params: { assetInfo } });
                 loadedCount++;
                 if (progressCallback) {
-                    progressCallback(loadedCount / totalAssets, null, path);
+                    // Pass assetInfo or its path for context in the callback
+                    progressCallback(loadedCount / totalAssets, assetInfo.name, assetInfo.path || assetInfo.name, true /* indicate error */);
                 }
-                
-                return { name: assetName, asset: null, path, error };
+                return null; // Indicate failure for this specific asset
             }
         });
 
-        await Promise.all(loadPromises);
+        // Use Promise.allSettled to ensure all attempts complete, even if some fail.
+        // loadAsset already handles individual errors and caching.
+        await Promise.allSettled(loadPromises);
         
-        this.engine.errorHandler.info(`Batch loading completed: ${Object.keys(results).length} assets loaded`, {
+        this.engine.errorHandler.info(`Batch loading process completed. Successfully loaded: ${Object.keys(results).length}/${totalAssets}`, {
             component: 'AssetManager',
             method: 'loadBatch'
         });
         
         return results;
+    }
+
+    _inferAssetTypeFromPath(path) {
+        const ext = this._getExtension(path);
+        if (['.png', '.jpg', '.jpeg', '.gif', '.svg'].includes(ext)) return AssetTypes.IMAGE;
+        if (['.mp3', '.wav', '.ogg'].includes(ext)) return AssetTypes.AUDIO;
+        if (['.json'].includes(ext)) return AssetTypes.JSON;
+        // Add more inferences as needed
+        this.engine.errorHandler.warn(`Could not infer asset type from path: ${path}. Defaulting to AssetTypes.JSON. Please specify type explicitly.`, { component: 'AssetManager', method: '_inferAssetTypeFromPath' });
+        return AssetTypes.JSON; // A default, or could be an error/null
     }
 
     /**
@@ -501,6 +551,49 @@ class AssetManager {
         
         this.assets.clear();
         this.promises.clear();
+    }
+
+    /**
+     * Alias for clear().
+     */
+    clearAll() {
+        this.clear();
+    }
+
+    /**
+     * Loads an image asset using a conventional path if only a name is provided.
+     * @param {string} nameOrPath - The asset name (e.g., 'player.png') or full path.
+     * @returns {Promise<HTMLImageElement>}
+     */
+    async getImage(nameOrPath) {
+        const isPath = nameOrPath.includes('/');
+        const name = isPath ? this._getAssetName(nameOrPath) : nameOrPath;
+        const path = isPath ? nameOrPath : `assets/images/${nameOrPath}`;
+        return this.loadAsset({ name, path, type: AssetTypes.IMAGE });
+    }
+
+    /**
+     * Loads an audio asset using a conventional path if only a name is provided.
+     * @param {string} nameOrPath - The asset name (e.g., 'music.mp3') or full path.
+     * @returns {Promise<HTMLAudioElement>}
+     */
+    async getAudio(nameOrPath) {
+        const isPath = nameOrPath.includes('/');
+        const name = isPath ? this._getAssetName(nameOrPath) : nameOrPath;
+        const path = isPath ? nameOrPath : `assets/audio/${nameOrPath}`;
+        return this.loadAsset({ name, path, type: AssetTypes.AUDIO });
+    }
+
+    /**
+     * Loads a JSON asset using a conventional path if only a name is provided.
+     * @param {string} nameOrPath - The asset name (e.g., 'config.json') or full path.
+     * @returns {Promise<Object>}
+     */
+    async getJSON(nameOrPath) {
+        const isPath = nameOrPath.includes('/');
+        const name = isPath ? this._getAssetName(nameOrPath) : nameOrPath;
+        const path = isPath ? nameOrPath : `assets/data/${nameOrPath}`;
+        return this.loadAsset({ name, path, type: AssetTypes.JSON });
     }
 
     // Private helper methods for enhanced functionality

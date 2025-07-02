@@ -323,10 +323,19 @@ describe('AssetManager', () => {
       expect(assetManager.get('audio-ok')._isMockAudio).to.be.true;
       expect(assetManager.get('img-bad')).to.be.undefined; // Failed asset not stored
 
-      expect(mockErrorHandler.critical.calledOnce).to.be.true; // Called for 'img-bad'
+      expect(mockErrorHandler.critical.calledOnce).to.be.true; // Called for 'img-bad' by loadAsset
       expect(mockErrorHandler.critical.getCall(0).args[1].params.assetName).to.equal('img-bad');
-      // Check that errorHandler.warn was called by loadManifest for the failed asset
-      expect(mockErrorHandler.warn.calledWith(sinon.match(/Asset 'img-bad' \(from manifest\) failed to load. Reason: AssetManager: Failed to load image 'img-bad' at path 'error-image.png'/), sinon.match.object)).to.be.true;
+
+      // Check that errorHandler.warn was called by loadBatch for the failed asset
+      const expectedWarningPattern = /Asset 'img-bad' \(from batch\) failed to load. Reason: AssetManager: Failed to load image 'img-bad' at path 'error-image.png'. Check network tab for details./;
+      let foundWarning = false;
+      for (const call of mockErrorHandler.warn.getCalls()) {
+        if (typeof call.args[0] === 'string' && expectedWarningPattern.test(call.args[0])) {
+          foundWarning = true;
+          break;
+        }
+      }
+      expect(foundWarning, `Expected warning matching ${expectedWarningPattern}`).to.be.true;
     });
 
     it('should call engine.errorHandler.warn for invalid asset entries in manifest', async () => {
@@ -344,21 +353,28 @@ describe('AssetManager', () => {
     });
 
     it('should call engine.errorHandler.warn for invalid manifest object', async () => {
-        await assetManager.loadManifest({ items: [] }); // Invalid structure
+        await assetManager.loadManifest(null); // Truly invalid manifest
         expect(mockErrorHandler.warn.calledOnce).to.be.true;
         expect(mockErrorHandler.warn.getCall(0).args[0]).to.include("Manifest object is invalid or missing the 'assets' array.");
     });
 
-    it('should call engine.errorHandler.error if fetching manifest URL fails', async () => {
-        await assetManager.loadManifest('invalid-manifest-url.json');
-        expect(mockErrorHandler.error.callCount).to.be.greaterThan(0);
-        // Find the call that matches our expected pattern
-        const matchingCall = mockErrorHandler.error.getCalls().find(call => 
-            call.args[0] && call.args[0].includes("Failed to fetch manifest from 'invalid-manifest-url.json'")
-        );
-        expect(matchingCall).to.exist;
-        expect(matchingCall.args[0]).to.include("Failed to fetch manifest from 'invalid-manifest-url.json'. Status: 404");
-        expect(matchingCall.args[1].params.manifestPath).to.equal('invalid-manifest-url.json');
+    it('should call critical and error handlers if fetching manifest URL fails', async () => {
+        const result = await assetManager.loadManifest('invalid-manifest-url.json');
+        // loadManifest catches the error from loadAsset and returns {}
+        expect(result).to.deep.equal({});
+
+        // loadAsset (for the manifest file) should call critical (mock critical throws but loadAsset catches and re-throws)
+        // However, the mockErrorHandler.critical itself throws, so this part of loadAsset's try/catch is what we see.
+        expect(mockErrorHandler.critical.calledOnce).to.be.true;
+        const criticalCallArgs = mockErrorHandler.critical.getCall(0).args;
+        expect(criticalCallArgs[0]).to.equal("AssetManager: Failed to fetch JSON 'manifest_invalid-manifest-url' from 'invalid-manifest-url.json'. Status: 404");
+        expect(criticalCallArgs[1].params.assetName).to.equal('manifest_invalid-manifest-url');
+
+        // loadManifest's catch block should then call errorHandler.error
+        expect(mockErrorHandler.error.calledOnce).to.be.true;
+        const errorCallArgs = mockErrorHandler.error.getCall(0).args;
+        expect(errorCallArgs[0]).to.equal("Failed to fetch manifest from 'invalid-manifest-url.json'. AssetManager: Failed to fetch JSON 'manifest_invalid-manifest-url' from 'invalid-manifest-url.json'. Status: 404");
+        expect(errorCallArgs[1].params.manifestPath).to.equal('invalid-manifest-url.json');
     });
   });
 

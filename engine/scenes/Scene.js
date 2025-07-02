@@ -5,7 +5,7 @@
  * It manages its own assets, game objects, UI components, and logic for updates and rendering.
  */
 
-import { UIManager } from '../ui/UIManager.js';
+import UIManager from '../ui/UIManager.js';
 import { UIBuilder } from '../ui/UIBuilder.js';
 import { FormValidator } from '../ui/FormValidator.js';
 
@@ -42,6 +42,7 @@ class Scene {
             // This error is critical for scene operation.
             throw new Error("Scene constructor: An 'engine' instance is required.");
         }
+        console.log(`Scene CONSTRUCTOR (${this.constructor.name}) - engine.assetManager type: ${typeof engine.assetManager}, Has discoverAssets: ${engine.assetManager ? typeof engine.assetManager.discoverAssets : 'N/A'}`);
         
         /** @type {import('../core/HatchEngine.js').HatchEngine} */
         this.engine = engine;
@@ -119,15 +120,15 @@ class Scene {
      */
     _initializeUISystem() {
         // Create scene-specific UI manager
-        this.uiManager = new UIManager({
-            theme: this.config.uiTheme,
-            canvas: this.renderingEngine?.canvas,
-            context: this.renderingEngine?.context,
-            inputManager: this.inputManager,
-            eventBus: this.eventBus,
-            ...this.config.uiConfig
-        });
+        this.uiManager = new UIManager(this.engine);
         
+        // Apply scene-specific theme if different from UIManager's current theme
+        if (this.config.uiTheme && this.uiManager.currentTheme !== this.config.uiTheme) {
+            this.uiManager.setTheme(this.config.uiTheme);
+        }
+        // Note: Other this.config.uiConfig properties are not automatically passed.
+        // UIManager would need specific methods if it needs to consume them.
+
         // Create fluent UI builder
         this.ui = new UIBuilder(this.uiManager);
         
@@ -752,6 +753,7 @@ class Scene {
      * Enhanced init with automatic asset loading and system setup
      */
     async init() {
+        console.log(`Scene: ${this.constructor.name} async init() called. AssetManager type: ${typeof this.assetManager}, Has discoverAssets: ${this.assetManager ? typeof this.assetManager.discoverAssets : 'N/A'}`);
         this.state = 'initializing';
         this.runHooks('beforeInit');
 
@@ -1175,6 +1177,16 @@ class Scene {
 
     async _autoLoadAssets() {
         const sceneName = this.constructor.name.replace('Scene', '').toLowerCase();
+        console.log('Scene:_autoLoadAssets - this.assetManager:', this.assetManager);
+        if (this.assetManager) {
+            console.log('Scene:_autoLoadAssets - typeof this.assetManager.discoverAssets:', typeof this.assetManager.discoverAssets);
+            console.log('Scene:_autoLoadAssets - this.assetManager keys:', Object.keys(this.assetManager));
+            if (typeof this.assetManager.discoverAssets !== 'function') {
+                console.error('CRITICAL_DEBUG: discoverAssets is NOT a function on this.assetManager object just before call!');
+            }
+        } else {
+            console.error('CRITICAL_DEBUG: this.assetManager is undefined/null in _autoLoadAssets!');
+        }
         const assets = await this.assetManager.discoverAssets(`./assets/scenes/${sceneName}/`);
         
         if (assets && (assets.images.length || assets.audio.length || assets.data.length)) {

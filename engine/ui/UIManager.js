@@ -270,6 +270,10 @@ export default class UIManager {
         return this.components.get(componentId);
     }
 
+    getAllComponents() {
+        return Array.from(this.components.values()); // Return an array of components
+    }
+
     // Layout system
     createLayout(name, type, config = {}) {
         let layout;

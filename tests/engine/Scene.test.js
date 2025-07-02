@@ -24,11 +24,21 @@ describe('Scene', () => {
     mockRenderingEngine = { camera: mockCamera, add: sinon.stub() };
     mockSceneManager = {};
     mockEventBus = { on: sinon.stub(), off: sinon.stub(), emit: sinon.stub() };
-    mockHatchConfig = { setting: 'testValue' };
+    mockHatchConfig = { setting: 'testValue', instructions: [], instructionsKey: 'KeyH' }; // Added instructions for UIManager
+
+    const mockCanvas = {
+      addEventListener: sinon.stub(),
+      removeEventListener: sinon.stub(),
+      getBoundingClientRect: sinon.stub().returns({ left: 0, top: 0, width: 800, height: 600 }), // Needed by UIManager event handlers
+      style: {}, // Needed by UIManager updateCursor
+      width: 800, // Needed by UIManager updateBreakpoint
+      height: 600 // Needed by UIManager updateBreakpoint
+    };
 
     mockEngine = {
       assetManager: mockAssetManager,
       inputManager: mockInputManager,
+      canvas: mockCanvas, // Added mock canvas
       renderingEngine: mockRenderingEngine,
       sceneManager: mockSceneManager,
       eventBus: mockEventBus,

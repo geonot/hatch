@@ -8,7 +8,7 @@
     "hatch": "bin/hatch.js"
   },
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config '{\"testEnvironment\": \"jest-environment-jsdom\", \"transform\": {}, \"testMatch\": [\"**/tests/**/*.test.js\"]}'",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --coverage",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --watch",
     "lint": "echo 'Linting not configured yet'",

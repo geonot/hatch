@@ -15,10 +15,11 @@ describe('HatchEngine Initialization Order Tests', () => {
   beforeEach(() => {
     sinon.restore();
 
-    // Create a comprehensive mock canvas using the global HTMLCanvasElement class
-    const mockCanvas = new global.HTMLCanvasElement();
+    // Create a comprehensive mock canvas
+    const mockCanvas = document.createElement('canvas');
     // Override specific methods for testing
-    mockCanvas.getContext = sinon.stub().returns({
+    // Ensure getContext is a function that returns a valid context-like object
+    const mockContext = {
       fillRect: sinon.stub(),
       clearRect: sinon.stub(),
       drawImage: sinon.stub(),
@@ -41,23 +42,45 @@ describe('HatchEngine Initialization Order Tests', () => {
       lineTo: sinon.stub(),
       fill: sinon.stub(),
       stroke: sinon.stub()
-    });
-    mockCanvas.getBoundingClientRect = sinon.stub().returns({
-      top: 0,
-      left: 0,
-      right: 800,
-      bottom: 600,
-      width: 800,
-      height: 600,
-      x: 0,
-      y: 0
-    });
+    };
+    mockCanvas.getContext = sinon.stub().returns(mockContext);
+    // Set canvas dimensions directly as properties
+    mockCanvas.width = 800;
+    mockCanvas.height = 600;
+
+    // Mock addEventListener and other methods if not already present on JSDOM's canvas
+    if (!mockCanvas.addEventListener) {
+      mockCanvas.addEventListener = sinon.stub();
+    }
+    if (!mockCanvas.removeEventListener) {
+      mockCanvas.removeEventListener = sinon.stub();
+    }
+    if (!mockCanvas.getBoundingClientRect) {
+      mockCanvas.getBoundingClientRect = sinon.stub().returns({
+        top: 0,
+        left: 0,
+        right: 800,
+        bottom: 600,
+        width: 800,
+        height: 600,
+        x: 0,
+        y: 0
+      });
+    }
+    // Ensure style property exists
+    if (!mockCanvas.style) {
+      mockCanvas.style = {};
+    }
 
     // Mock DOM environment - directly replace the getElementById method
     const originalGetElementById = document.getElementById;
     document.getElementById = function(id) {
       // Return mock canvas for any canvas ID that starts with 'testCanvas'
       if (id && id.startsWith('testCanvas')) {
+        // Ensure the returned canvas has a getContext method
+        if (!mockCanvas.getContext) {
+          mockCanvas.getContext = sinon.stub().returns(mockContext);
+        }
         return mockCanvas;
       }
       return null; // Default behavior for other IDs
@@ -70,21 +93,23 @@ describe('HatchEngine Initialization Order Tests', () => {
       userAgent: 'Test Browser'
     };
 
-    global.window = {
-      ...global.window,
-      devicePixelRatio: 1
-    };
+    // JSDOM's window should already have devicePixelRatio, but ensure it for tests
+    global.window = global.window || {}; // Ensure window object exists
+    global.window.devicePixelRatio = global.window.devicePixelRatio || 1;
+    // Ensure performance and requestAnimationFrame are available on JSDOM's window or global
+    global.window.performance = global.window.performance || { now: sinon.stub().returns(0) };
+    global.window.requestAnimationFrame = global.window.requestAnimationFrame || sinon.stub();
+    global.window.cancelAnimationFrame = global.window.cancelAnimationFrame || sinon.stub();
 
-    global.performance = {
-      now: sinon.stub().returns(0)
-    };
-
-    global.requestAnimationFrame = sinon.stub();
-    global.cancelAnimationFrame = sinon.stub();
+    // Make them available on global for older test patterns if necessary
+    global.performance = global.window.performance;
+    global.requestAnimationFrame = global.window.requestAnimationFrame;
+    global.cancelAnimationFrame = global.window.cancelAnimationFrame;
 
     projectConfig = {
       canvasId: 'testCanvas',
       gameWidth: 800,
+      gameHeight: 600,
       gameHeight: 600,
       initialScene: 'TestScene',
       logging: { level: 'info' },
